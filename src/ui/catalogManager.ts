@@ -9,7 +9,8 @@
 
 import { appState } from '../appState.ts';
 import { saveCatalog } from '../storage/catalogStore.ts';
-import { markSnapshotStale } from '../estimate/snapshot.ts';
+// markSnapshotStale no longer needed — catalog-changed event triggers auto-sync
+void (null as unknown); // suppress unused-import if linter complains
 import type { Material, Task } from '../estimate/catalog.ts';
 import { exportCatalogCSV, handleImportCSV } from './csvBulk.ts';
 import { showPrompt, showConfirm } from './modal.ts';
@@ -255,9 +256,9 @@ function attachTabListeners(body: HTMLElement, tab: Tab, modal: HTMLElement): vo
 
 async function handleSave(modal: HTMLElement): Promise<void> {
   await saveCatalog(appState.catalog);
-  appState.project = markSnapshotStale(appState.project);
-  appState.emit('catalog-changed');
   modal.remove();
+  // Auto-sync is triggered by the catalog-changed listener in main.ts
+  appState.emit('catalog-changed');
 }
 
 function esc(s: string): string {

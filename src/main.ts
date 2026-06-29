@@ -11,7 +11,7 @@ import { openCatalogManager } from './ui/catalogManager.ts';
 import { openBidExport } from './ui/bidExport.ts';
 import { initPdfCanvas } from './ui/pdfCanvas.ts';
 import { isTauri } from './tauri/integration.ts';
-import { refreshSnapshotPrices } from './estimate/snapshot.ts';
+import { syncProjectWithCatalog } from './estimate/snapshot.ts';
 import { showConfirm } from './ui/modal.ts';
 
 async function init(): Promise<void> {
@@ -28,6 +28,13 @@ async function init(): Promise<void> {
   document.getElementById('btn-open-project')?.addEventListener('click', () => void handleOpenProject());
   document.getElementById('btn-save-project')?.addEventListener('click', () => void handleSaveProject());
   document.getElementById('btn-save-project-as')?.addEventListener('click', () => void handleSaveProjectAs());
+
+  // Auto-sync project whenever the catalog changes (prices, phases, tasks, formulas)
+  appState.on('catalog-changed', () => {
+    appState.project = syncProjectWithCatalog(appState.project, appState.catalog);
+    appState.dirty = true;
+    appState.emit('project-changed');
+  });
 
   // Init the estimate workspace UI
   initEstimateUI();
@@ -55,9 +62,12 @@ function handleNewProject(): void {
 }
 
 function handleRefreshPrices(): void {
-  void showConfirm('Refresh material prices and labor rates from the master catalog? Scope inputs are kept.', 'Refresh').then(ok => {
+  void showConfirm(
+    'Re-sync this project with the master catalog?\n\nPrices, task names, formulas, and new items will update. Scope inputs and measurements are kept.',
+    'Re-sync',
+  ).then(ok => {
     if (!ok) return;
-    appState.project = refreshSnapshotPrices(appState.project, appState.catalog);
+    appState.project = syncProjectWithCatalog(appState.project, appState.catalog);
     appState.dirty = true;
     appState.emit('project-changed');
   });

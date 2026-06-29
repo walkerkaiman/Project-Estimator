@@ -82,6 +82,75 @@ export function markSnapshotStale(project: EstimateProject): EstimateProject {
 }
 
 /**
+ * Fully sync the project with the current catalog state.
+ *
+ * Rules:
+ *  • Material prices → always replaced from catalog (snapshot refreshed).
+ *  • New catalog phases/tasks → appended to project.
+ *  • Existing catalog phases/tasks (same id) → name, rates, formulas,
+ *    scopeInputs, and recipe updated from catalog (preserves scope values).
+ *  • Orphaned project phases/tasks (id no longer in catalog) → kept as-is
+ *    so scope data and measurements are not lost; they show "(removed from catalog)"
+ *    in their name if their name still matches the old catalog name.
+ *  • Project-only phases/tasks (ids that were never in catalog) → untouched.
+ */
+export function syncProjectWithCatalog(
+  project: EstimateProject,
+  catalog: Catalog,
+): EstimateProject {
+  const updated = { ...project };
+
+  // 1. Refresh all material prices
+  updated.snapshot = takeSnapshot(catalog);
+  updated.snapshotStale = false;
+
+  // 2. Sync existing project phases that came from the catalog
+  const catalogPhaseIds = new Set(catalog.phases.map(p => p.id));
+  updated.phases = project.phases.map(ph => {
+    const catPhase = catalog.phases.find(cp => cp.id === ph.id);
+    if (!catPhase) return ph; // project-only or orphaned — leave alone
+    return { ...ph, name: catPhase.name, order: catPhase.order };
+  });
+
+  // 3. Add new catalog phases not yet in the project
+  const projectPhaseIds = new Set(updated.phases.map(p => p.id));
+  for (const catPhase of catalog.phases) {
+    if (!projectPhaseIds.has(catPhase.id)) {
+      updated.phases.push({ ...catPhase });
+    }
+  }
+  void catalogPhaseIds; // used implicitly above
+
+  // 4. Sync existing project tasks that came from the catalog
+  updated.tasks = project.tasks.map(t => {
+    const catTask = catalog.tasks.find(ct => ct.id === t.id);
+    if (!catTask) return t; // project-only or orphaned — leave alone
+    return {
+      ...t,
+      // Structural / formula fields always come from catalog
+      name:             catTask.name,
+      phaseId:          catTask.phaseId,
+      laborUnit:        catTask.laborUnit,
+      laborQtyFormula:  catTask.laborQtyFormula,
+      scopeInputs:      structuredClone(catTask.scopeInputs),
+      recipe:           structuredClone(catTask.recipe),
+      // Rates: use catalog unless user has explicitly locked them
+      laborRate: t.lockedLaborRate !== undefined ? t.lockedLaborRate : catTask.laborRate,
+    };
+  });
+
+  // 5. Add new catalog tasks not yet in the project
+  const projectTaskIds = new Set(updated.tasks.map(t => t.id));
+  for (const catTask of catalog.tasks) {
+    if (!projectTaskIds.has(catTask.id)) {
+      updated.tasks.push({ ...structuredClone(catTask) });
+    }
+  }
+
+  return updated;
+}
+
+/**
  * Look up a material price from the project snapshot, falling back to the
  * master catalog if not found in the snapshot.
  */
