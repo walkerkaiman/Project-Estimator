@@ -27,6 +27,9 @@ export function initEstimateUI(): void {
   appState.on('project-loaded', renderAll);
   appState.on('catalog-loaded', renderAll);
   appState.on('project-changed', renderAll);
+  // When a canvas measurement is applied, refresh affected scope inputs without
+  // tearing down the whole DOM (avoids focus loss / scroll jump)
+  appState.on('scope-changed', refreshAllScopeInputs);
 
   // Wire "Add Phase" once — button lives in static HTML, not re-rendered
   document.getElementById('btn-add-phase')?.addEventListener('click', () => {
@@ -300,6 +303,39 @@ function updateScope(taskId: string, role: string, value: number): void {
     const el = document.querySelector<HTMLElement>(`[data-task-total="${CSS.escape(taskId)}"]`);
     if (el) el.textContent = fmtCurrency(totals.totalCost);
   }
+  renderGrandTotal();
+}
+
+/**
+ * Called when a canvas measurement is applied to a scope entry.
+ * Walks all rendered scope inputs and syncs their displayed values from the
+ * current project state, then updates task totals and the grand total.
+ * Does NOT re-render the full DOM so focus and scroll position are preserved.
+ */
+function refreshAllScopeInputs(): void {
+  const scope = appState.project.scope;
+
+  // Update every visible scope input field
+  document.querySelectorAll<HTMLInputElement>('.scope-input').forEach(input => {
+    const taskId = input.dataset.task;
+    const role = input.dataset.role;
+    if (!taskId || !role) return;
+    const entry = scope.find((s: ScopeEntry) => s.taskId === taskId && s.role === role);
+    if (entry !== undefined) {
+      // Only update if the value actually changed to avoid disturbing the cursor
+      const newVal = String(entry.value);
+      if (input.value !== newVal) input.value = newVal;
+    }
+  });
+
+  // Update each task's cost total
+  appState.project.tasks.forEach(task => {
+    const scopeValues = getScopeValues(task.id);
+    const totals = computeTaskTotals(task, scopeValues);
+    const el = document.querySelector<HTMLElement>(`[data-task-total="${CSS.escape(task.id)}"]`);
+    if (el) el.textContent = fmtCurrency(totals.totalCost);
+  });
+
   renderGrandTotal();
 }
 
