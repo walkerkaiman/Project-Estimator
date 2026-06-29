@@ -860,6 +860,57 @@ html, body {
 
 .stale-banner button:hover { background: rgba(245,158,11,0.15); }
 
+/* ── Scale status ───────────────────────────────────────────────────────────── */
+
+#canvas-scale-status.scale-unset {
+  color: var(--color-accent2);
+  font-style: italic;
+}
+
+/* ── Toasts ─────────────────────────────────────────────────────────────────── */
+
+#canvas-toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  z-index: 9500;
+  pointer-events: none;
+}
+
+.canvas-toast {
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 480px;
+  text-align: center;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+
+.canvas-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.canvas-toast-info {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.canvas-toast-warn {
+  background: var(--color-accent2);
+  color: #000;
+}
+
 /* ── Page navigation ───────────────────────────────────────────────────────── */
 
 .canvas-page-indicator {

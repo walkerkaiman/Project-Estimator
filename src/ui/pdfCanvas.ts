@@ -37,6 +37,10 @@ let currentPageIndex = 0;
 let totalPages = 0;
 let pageScale: PageScale = { pointsPerUnit: 0, calibrationUnit: 'ft', calibrated: false };
 
+// Scale gate — same pattern as RedlinePDF
+const MEASURE_TOOLS = ['measure-linear', 'measure-rect', 'measure-poly', 'count'] as const;
+let pendingMeasureTool: string | null = null;
+
 // Count tool state
 let countCategories: CountCategory[] = [];
 let activeCountCategoryId: string | null = null;
@@ -107,7 +111,7 @@ export function initPdfCanvas(): void {
 
   setTool('select');
 
-  // Canvas scale-set event
+  // Canvas scale-set event — update scale state, then auto-activate pending tool
   canvasState.on('scale-set', (data) => {
     const { scale } = data as { pageIndex: number; scale: PageScale };
     pageScale = scale;
@@ -115,6 +119,21 @@ export function initPdfCanvas(): void {
     if (pages[currentPageIndex]) pages[currentPageIndex].scale = scale;
     appState.dirty = true;
     updateScaleStatus();
+
+    if (pendingMeasureTool) {
+      const tool = pendingMeasureTool;
+      pendingMeasureTool = null;
+      const toolLabel: Record<string, string> = {
+        'measure-linear': 'Linear Measure',
+        'measure-rect': 'Rectangle Area',
+        'measure-poly': 'Polygon Area',
+        'count': 'Count',
+      };
+      showToast(`Scale set! ${toolLabel[tool] ?? tool} tool is now active.`, 'info');
+      setTool(tool);
+    } else {
+      showToast('Scale set.', 'info');
+    }
   });
 
   // Markup transform (move/resize after bake)
@@ -178,6 +197,23 @@ export function initPdfCanvas(): void {
 // ── Tool management ─────────────────────────────────────────────────────────────
 
 function setTool(name: string): void {
+  // Gate: measure tools require a calibrated page scale
+  if ((MEASURE_TOOLS as readonly string[]).includes(name) && !pageScale.calibrated) {
+    pendingMeasureTool = name;
+    setTool('scale-set');   // recurse once — scale-set is always allowed
+    showToast(
+      'Scale not set. Click two points on a known dimension, enter the real distance, then your tool will activate.',
+      'warn',
+      6000,
+    );
+    return;
+  }
+
+  // Clear pending if user switches to a non-measure, non-scale-set tool
+  if (name !== 'scale-set' && !(MEASURE_TOOLS as readonly string[]).includes(name)) {
+    pendingMeasureTool = null;
+  }
+
   activeTool?.deactivate();
   activeTool = tools.get(name) ?? null;
   activeTool?.activate();
@@ -253,6 +289,7 @@ async function loadPdfBytes(bytes: Uint8Array, _name: string): Promise<void> {
 async function renderPage(pageIndex: number): Promise<void> {
   if (!pdfRenderer || !stageManager) return;
   currentPageIndex = pageIndex;
+  pendingMeasureTool = null; // reset on page switch — each page gates independently
 
   const container = document.getElementById('canvas-container');
   const cw = container?.clientWidth ?? 800;
@@ -674,9 +711,30 @@ function updateScaleStatus(): void {
   if (pageScale.calibrated) {
     const reInch = pageScale.pointsPerUnit / 72;
     el.textContent = `Scale: 1" = ${reInch >= 12 ? (reInch / 12).toFixed(1) + "'" : reInch.toFixed(2) + '"'}`;
+    el.classList.remove('scale-unset');
   } else {
-    el.textContent = 'Scale: not set';
+    el.textContent = 'Scale: not set — click Set Scale tool to calibrate';
+    el.classList.add('scale-unset');
   }
+}
+
+function showToast(message: string, type: 'info' | 'warn' = 'info', duration = 4000): void {
+  let container = document.getElementById('canvas-toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'canvas-toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `canvas-toast canvas-toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  // Fade in
+  requestAnimationFrame(() => toast.classList.add('visible'));
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+  }, duration);
 }
 
 // Suppress unused import warning
