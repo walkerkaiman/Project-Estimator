@@ -130,6 +130,130 @@ html, body {
   overflow: hidden;
 }
 
+/* Split content area */
+#split-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+#split-handle {
+  width: 6px;
+  flex-shrink: 0;
+  background: var(--color-border);
+  cursor: col-resize;
+  transition: background 0.15s;
+  position: relative;
+}
+
+#split-handle:hover,
+#split-handle.dragging {
+  background: var(--color-accent);
+}
+
+/* Canvas panel */
+#canvas-panel {
+  display: flex;
+  flex-direction: column;
+  width: 50%;
+  min-width: 200px;
+  background: #555;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.canvas-tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.canvas-tb-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.canvas-tb-btn:hover {
+  background: var(--color-surface2);
+  border-color: var(--color-border);
+}
+
+.canvas-tb-btn.active {
+  background: rgba(59,130,246,0.2);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.canvas-tb-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--color-border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.canvas-tb-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+#canvas-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background: #555;
+}
+
+.canvas-load-status {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* Content area shrinks to left half when canvas panel shown */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--color-bg);
+  min-width: 200px;
+}
+
 /* ── Sidebar ────────────────────────────────────────────────────────────────── */
 
 #sidebar {
@@ -196,12 +320,6 @@ html, body {
 }
 
 /* ── Estimate workspace ────────────────────────────────────────────────────── */
-
-#content {
-  flex: 1;
-  overflow-y: auto;
-  background: var(--color-bg);
-}
 
 .estimate-workspace {
   padding: 24px;

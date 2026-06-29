@@ -9,6 +9,7 @@ import { openProject, saveProjectAs, saveProjectToPath } from './storage/project
 import { initEstimateUI } from './ui/estimateView.ts';
 import { openCatalogManager } from './ui/catalogManager.ts';
 import { openBidExport } from './ui/bidExport.ts';
+import { initPdfCanvas } from './ui/pdfCanvas.ts';
 import { isTauri } from './tauri/integration.ts';
 import { refreshSnapshotPrices } from './estimate/snapshot.ts';
 
@@ -28,6 +29,12 @@ async function init(): Promise<void> {
 
   // Init the estimate workspace UI
   initEstimateUI();
+
+  // Init the PDF measurement canvas panel
+  initPdfCanvas();
+
+  // Draggable split handle
+  initSplitPanel();
 
   // Warn before closing with unsaved changes
   window.addEventListener('beforeunload', e => {
@@ -96,5 +103,27 @@ document.addEventListener('keydown', e => {
     handleNewProject();
   }
 });
+
+function initSplitPanel(): void {
+  const handle = document.getElementById('split-handle');
+  const canvasPanel = document.getElementById('canvas-panel');
+  const content = document.getElementById('content');
+  if (!handle || !canvasPanel || !content) return;
+
+  let dragging = false;
+  handle.addEventListener('mousedown', () => { dragging = true; handle.classList.add('dragging'); });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const split = document.getElementById('split-content');
+    if (!split) return;
+    const rect = split.getBoundingClientRect();
+    const totalW = rect.width;
+    const leftW = e.clientX - rect.left;
+    const pct = Math.max(20, Math.min(80, (leftW / totalW) * 100));
+    content.style.flex = `0 0 ${pct}%`;
+    canvasPanel.style.width = `${100 - pct}%`;
+  });
+  window.addEventListener('mouseup', () => { dragging = false; handle.classList.remove('dragging'); });
+}
 
 void init();
