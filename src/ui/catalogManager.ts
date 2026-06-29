@@ -121,7 +121,7 @@ function renderPhasesTab(): string {
 
   const sections = phases.map((ph, pi) => {
     const phaseTasks = tasks.filter(t => t.phaseId === ph.id);
-    const taskRows = phaseTasks.map((t, ti) => `
+    const taskRows = phaseTasks.map((t, _ti) => `
       <div class="phase-task-row">
         <span>${esc(t.name)}</span>
         <button class="icon-btn danger" data-delete-cat-task="${tasks.indexOf(t)}" title="Delete task">✕</button>

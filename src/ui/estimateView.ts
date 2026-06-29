@@ -16,7 +16,7 @@
 
 import { appState } from '../appState.ts';
 import { evalFormula, buildVars } from '../estimate/formulaEngine.ts';
-import type { Task, RecipeLine, ScopeInputDef, Phase } from '../estimate/catalog.ts';
+import type { RecipeLine, ScopeInputDef, Phase } from '../estimate/catalog.ts';
 import type { ScopeEntry, SnapshotTask } from '../estimate/project.ts';
 import { getMaterialCost } from '../estimate/snapshot.ts';
 import { saveCatalog } from '../storage/catalogStore.ts';

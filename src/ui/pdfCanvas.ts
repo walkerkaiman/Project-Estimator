@@ -19,7 +19,7 @@ import { MeasureRectTool } from '../tools/measureRectTool.ts';
 import { MeasurePolyTool } from '../tools/measurePolyTool.ts';
 import { BaseTool, type ToolContext } from '../tools/baseTool.ts';
 import type { Markup, PageScale } from '../model/document.ts';
-import { DEFAULT_STROKE_STYLE, DEFAULT_UNITS } from '../model/document.ts';
+import { DEFAULT_STROKE_STYLE } from '../model/document.ts';
 import { generateId } from '../model/document.ts';
 import { computeScale } from '../measure/scale.ts';
 import { applyMeasurement } from '../estimate/measureAssign.ts';
@@ -96,7 +96,7 @@ export function initPdfCanvas(): void {
 
   // Markup transform (move/resize after bake)
   canvasState.on('markup-transform', (data) => {
-    const { id, node } = data as { id: string; node: { x: () => number; y: () => number } };
+    const { id } = data as { id: string; node: { x: () => number; y: () => number } };
     const markups = getPageMarkups();
     const markup = markups.find(m => m.id === id);
     if (!markup || !stageManager) return;

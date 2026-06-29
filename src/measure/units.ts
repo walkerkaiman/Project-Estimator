@@ -136,7 +136,7 @@ function greatestCommonDivisor(a: number, b: number): number {
 }
 
 /** Build the scale label shown in the status bar */
-export function formatScaleLabel(pointsPerRealInch: number, unit: LinearUnit): string {
+export function formatScaleLabel(pointsPerRealInch: number, _unit: LinearUnit): string {
   if (pointsPerRealInch <= 0) return 'Not calibrated';
   // How many PDF pts = 1 inch? pointsPerRealInch
   // Drawing scale e.g. "1" = 10'" means 72pts = 10*12 = 120 real inches

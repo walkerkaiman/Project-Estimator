@@ -22,7 +22,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import XLSX from 'xlsx';
 import type {
-  Catalog, Material, Phase, Task, Vendor, UnitDefinition, RecipeLine, ScopeInputDef, ScopeRole,
+  Catalog, Material, Phase, Task, Vendor, UnitDefinition, RecipeLine, ScopeInputDef,
 } from '../src/estimate/catalog.ts';
 import { CATALOG_VERSION } from '../src/estimate/catalog.ts';
 

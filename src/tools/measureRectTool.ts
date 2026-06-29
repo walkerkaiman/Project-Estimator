@@ -16,7 +16,7 @@ export class MeasureRectTool extends BaseTool {
     super('measure-rect', ctx);
   }
 
-  private buildLabel(kx: number, ky: number, kw: number, kh: number): string {
+  private buildLabel(_kx: number, _ky: number, kw: number, kh: number): string {
     const scale = this.ctx.getScale();
     if (!scale.calibrated) return 'Set scale first';
     const unit = this.ctx.getUnits().linearUnit;
