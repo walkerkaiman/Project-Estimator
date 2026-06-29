@@ -81,6 +81,7 @@ export function initPdfCanvas(): void {
   if (!container) return;
 
   stageManager = createKonvaStageManager('canvas-container');
+  setupWheelZoom();
 
   // File + tool buttons
   document.getElementById('btn-load-pdf')?.addEventListener('click', () => void handleLoadPdf());
@@ -609,11 +610,58 @@ function showCountAssignPrompt(categoryId: string): void {
 
 // ── Zoom / fit ──────────────────────────────────────────────────────────────────
 
+let wheelDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function setupWheelZoom(): void {
+  if (!stageManager) return;
+  const { stage } = stageManager;
+
+  stage.container().addEventListener('wheel', (e: WheelEvent) => {
+    e.preventDefault();
+
+    const scaleFactor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    const oldScale = stage.scaleX();
+    const newScale = Math.max(0.1, Math.min(20, oldScale * scaleFactor));
+
+    // Zoom toward the cursor position immediately (visual feedback)
+    const mousePointTo = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    };
+    stage.scale({ x: newScale, y: newScale });
+    stage.position({
+      x: pointer.x - mousePointTo.x * newScale,
+      y: pointer.y - mousePointTo.y * newScale,
+    });
+    stage.batchDraw();
+    canvasState.setZoom(newScale);
+
+    // Debounced: re-render PDF at new resolution for crisp text/lines
+    if (wheelDebounce) clearTimeout(wheelDebounce);
+    wheelDebounce = setTimeout(async () => {
+      if (!pdfRenderer || !stageManager) return;
+      const currentScale = stage.scaleX();
+      const pageInfo = await pdfRenderer.loadPage(currentPageIndex, currentScale);
+      stageManager.updatePdfCanvas(pageInfo.canvas);
+    }, 250);
+  }, { passive: false });
+}
+
 function zoom(factor: number): void {
   if (!stageManager) return;
-  const newZoom = Math.max(0.1, Math.min(10, canvasState.state.zoom * factor));
+  const newZoom = Math.max(0.1, Math.min(20, canvasState.state.zoom * factor));
   stageManager.setZoom(newZoom);
   canvasState.setZoom(newZoom);
+  // Debounced hi-res re-render after button zoom too
+  if (wheelDebounce) clearTimeout(wheelDebounce);
+  wheelDebounce = setTimeout(async () => {
+    if (!pdfRenderer || !stageManager) return;
+    const pageInfo = await pdfRenderer.loadPage(currentPageIndex, newZoom);
+    stageManager.updatePdfCanvas(pageInfo.canvas);
+  }, 250);
 }
 
 function fitPage(): void {
