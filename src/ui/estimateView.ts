@@ -27,6 +27,21 @@ export function initEstimateUI(): void {
   appState.on('project-loaded', renderAll);
   appState.on('catalog-loaded', renderAll);
   appState.on('project-changed', renderAll);
+
+  // Wire "Add Phase" once — button lives in static HTML, not re-rendered
+  document.getElementById('btn-add-phase')?.addEventListener('click', () => {
+    showPrompt('New Phase', '', 'Phase name')
+      .then(name => {
+        if (!name) return;
+        const id = `phase-${Date.now()}`;
+        appState.project.phases.push({ id, name, order: getPhases().length });
+        appState.dirty = true;
+        activePhaseId = id;
+        appState.emit('project-changed');
+      })
+      .catch(console.error);
+  });
+
   renderAll();
 }
 
@@ -62,25 +77,13 @@ function renderSidebar(): void {
   nav.innerHTML = phases.map(ph => `
     <a href="#" class="phase-link ${ph.id === activePhaseId ? 'active' : ''}" data-phase="${esc(ph.id)}">
       ${esc(ph.name)}
-    </a>`).join('') + `
-    <button class="add-phase-btn" id="btn-add-phase">+ Add Phase</button>`;
+    </a>`).join('');
 
   nav.querySelectorAll<HTMLElement>('.phase-link').forEach(a => {
     a.addEventListener('click', e => {
       e.preventDefault();
       activePhaseId = a.dataset.phase!;
       renderAll();
-    });
-  });
-
-  document.getElementById('btn-add-phase')?.addEventListener('click', () => {
-    void showPrompt('New Phase', '', 'Phase name').then(name => {
-      if (!name) return;
-      const id = `phase-${Date.now()}`;
-      appState.project.phases.push({ id, name, order: getPhases().length });
-      appState.dirty = true;
-      activePhaseId = id;
-      appState.emit('project-changed');
     });
   });
 }
