@@ -733,9 +733,30 @@ function showModal(title: string, body: string, okText = 'OK'): Promise<string |
 
   return new Promise(resolve => {
     _resolveModal = resolve;
-    div.querySelector('#canvas-modal-ok')?.addEventListener('click', () => { div.remove(); resolve('ok'); });
-    div.querySelector('#canvas-modal-cancel')?.addEventListener('click', () => { div.remove(); resolve(null); });
-    div.querySelector('#canvas-modal-cancel2')?.addEventListener('click', () => { div.remove(); resolve(null); });
+
+    function closeOk(): void {
+      // Resolve first so the awaiter can read DOM values, then remove the modal
+      resolve('ok');
+      queueMicrotask(() => div.remove());
+    }
+    function closeCancel(): void { div.remove(); resolve(null); }
+
+    div.querySelector('#canvas-modal-ok')?.addEventListener('click', closeOk);
+    div.querySelector('#canvas-modal-cancel')?.addEventListener('click', closeCancel);
+    div.querySelector('#canvas-modal-cancel2')?.addEventListener('click', closeCancel);
+
+    // Enter = OK, Escape = Cancel
+    div.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') { e.preventDefault(); closeOk(); }
+      if (e.key === 'Escape') closeCancel();
+    });
+
+    // Auto-focus first input
+    setTimeout(() => {
+      const first = div.querySelector<HTMLElement>('input, select');
+      first?.focus();
+      if (first instanceof HTMLInputElement) first.select();
+    }, 30);
   });
 }
 

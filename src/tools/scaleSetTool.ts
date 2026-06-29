@@ -98,7 +98,7 @@ export class ScaleSetTool extends BaseTool {
       <p>Enter the real-world length of the distance you just measured.</p>
       <div class="form-row">
         <label>Known distance:</label>
-        <input type="number" id="scale-value" min="0.001" step="any" placeholder="e.g. 10" style="width:100px;margin-right:8px;" />
+        <input type="number" id="scale-value" min="0.001" step="any" placeholder="e.g. 10" style="width:100px;" />
         <select id="scale-unit">${optionsHtml}</select>
       </div>
       <p class="modal-hint">Tip: pick two points on a known dimension (e.g. a 10-foot wall).</p>

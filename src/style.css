@@ -656,6 +656,51 @@ html, body {
   padding: 16px 20px;
 }
 
+.modal-body p {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.modal-body .modal-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 6px;
+}
+
+.modal-body .form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  flex-wrap: wrap;
+}
+
+.modal-body .form-row label {
+  font-size: 13px;
+  min-width: 110px;
+  color: var(--color-text-muted);
+}
+
+.modal-body input[type="number"],
+.modal-body input[type="text"],
+.modal-body select {
+  background: var(--color-surface2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 5px 9px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+}
+
+.modal-body input[type="number"]:focus,
+.modal-body input[type="text"]:focus,
+.modal-body select:focus {
+  outline: 2px solid var(--color-accent);
+  border-color: var(--color-accent);
+}
+
 .bid-body { padding: 0 0 8px; }
 
 .modal-footer {
