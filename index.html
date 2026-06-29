@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project Estimator</title>
+  </head>
+  <body>
+    <div id="app">
+
+      <!-- ── Top Toolbar ──────────────────────────────────────────── -->
+      <header id="toolbar">
+        <div class="tb-brand">
+          <svg class="tb-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+            <path d="M7 8h10M7 12h6"/>
+          </svg>
+          <span class="tb-title">Project Estimator</span>
+        </div>
+
+        <div class="tb-group">
+          <button class="tb-btn" id="btn-new-project" title="New Project (Ctrl+N)">
+            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+            <span>New</span>
+          </button>
+          <button class="tb-btn" id="btn-open-project" title="Open Project (Ctrl+O)">
+            <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Open</span>
+          </button>
+          <button class="tb-btn" id="btn-save-project" title="Save (Ctrl+S)">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
+            <span>Save</span>
+          </button>
+          <button class="tb-btn" id="btn-save-project-as" title="Save As (Ctrl+Shift+S)">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/><line x1="20" y1="9" x2="24" y2="9"/><line x1="22" y1="7" x2="22" y2="11"/></svg>
+            <span>Save As</span>
+          </button>
+        </div>
+
+        <div class="tb-group tb-right">
+          <button class="tb-btn" id="btn-catalog" title="Manage Catalog">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h16M4 18h7"/></svg>
+            <span>Catalog</span>
+          </button>
+          <button class="tb-btn" id="btn-export-bid" title="Export Bid Summary">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Export Bid</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- ── Main Layout ──────────────────────────────────────────── -->
+      <div id="main-layout">
+
+        <!-- Left sidebar: project outline / phase nav -->
+        <aside id="sidebar">
+          <div class="sidebar-section">
+            <div class="sidebar-heading">Project</div>
+            <div id="project-name-display" class="project-name">Untitled Project</div>
+          </div>
+          <div class="sidebar-section">
+            <div class="sidebar-heading">Phases</div>
+            <nav id="phase-nav" class="phase-nav"></nav>
+          </div>
+          <div class="sidebar-section sidebar-totals">
+            <div class="sidebar-heading">Grand Total</div>
+            <div id="grand-total" class="grand-total">—</div>
+          </div>
+        </aside>
+
+        <!-- Main content: estimate workspace -->
+        <main id="content">
+          <div id="estimate-workspace" class="estimate-workspace">
+            <div class="empty-state">
+              <svg viewBox="0 0 24 24" class="empty-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
+              <p>No catalog loaded.</p>
+              <p>Use <strong>Catalog → Import</strong> to load your estimating data,<br>then open or create a project.</p>
+            </div>
+          </div>
+        </main>
+
+      </div><!-- /#main-layout -->
+
+    </div><!-- /#app -->
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
