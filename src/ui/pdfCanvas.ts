@@ -3,10 +3,11 @@
  *
  * Manages:
  *   • Loading a PDF (via file picker or drag-drop)
+ *   • Multi-page navigation (prev / next, page indicator)
  *   • Rendering pages via pdf.js
- *   • Hosting the Konva stage with measurement tools
- *   • Saving/loading measurement markups within the project
- *   • Emitting applyMeasurement() when a measurement is placed
+ *   • Hosting the Konva stage with measurement + count tools
+ *   • Per-page markup storage within the project
+ *   • Measurement → scope assignment (linear, area, count totals)
  */
 
 import { canvasState } from '../canvas-state/canvasState.ts';
@@ -17,45 +18,59 @@ import { ScaleSetTool } from '../tools/scaleSetTool.ts';
 import { MeasureLinearTool } from '../tools/measureLinearTool.ts';
 import { MeasureRectTool } from '../tools/measureRectTool.ts';
 import { MeasurePolyTool } from '../tools/measurePolyTool.ts';
+import { CountTool } from '../tools/countTool.ts';
 import { BaseTool, type ToolContext } from '../tools/baseTool.ts';
-import type { Markup, PageScale } from '../model/document.ts';
-import { DEFAULT_STROKE_STYLE } from '../model/document.ts';
-import { generateId } from '../model/document.ts';
+import type { Markup, PageScale, CountCategory, CountMarkup } from '../model/document.ts';
+import { DEFAULT_STROKE_STYLE, COUNT_SYMBOLS, COUNT_COLORS, generateId } from '../model/document.ts';
 import { computeScale } from '../measure/scale.ts';
 import { applyMeasurement } from '../estimate/measureAssign.ts';
 import { appState } from '../appState.ts';
 import { isTauri } from '../tauri/integration.ts';
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── State ──────────────────────────────────────────────────────────────────────
 
 let stageManager: KonvaStageManager | null = null;
 let pdfRenderer: PdfRenderer | null = null;
 let activeTool: BaseTool | null = null;
 let tools: Map<string, BaseTool> = new Map();
 let currentPageIndex = 0;
+let totalPages = 0;
 let pageScale: PageScale = { pointsPerUnit: 0, calibrationUnit: 'ft', calibrated: false };
 
-// Per-page markups (stored in project)
-function getPageMarkups(): Markup[] {
-  return (appState.project as unknown as { canvasPages?: { markups: Markup[] }[] }).canvasPages?.[currentPageIndex]?.markups ?? [];
+// Count tool state
+let countCategories: CountCategory[] = [];
+let activeCountCategoryId: string | null = null;
+let countSymbolSize = 12;
+
+// ── Per-page canvas data (stored piggy-backed on project) ─────────────────────
+
+type CanvasPageData = { markups: Markup[]; scale?: PageScale };
+type ProjectWithCanvas = typeof appState.project & { canvasPages?: CanvasPageData[] };
+
+function canvasPages(): CanvasPageData[] {
+  return (appState.project as ProjectWithCanvas).canvasPages ?? [];
 }
 
-function ensureCanvasPages(totalPages: number): void {
-  const proj = appState.project as unknown as { canvasPages?: { markups: Markup[]; scale?: PageScale }[] };
+function getPageMarkups(): Markup[] {
+  return canvasPages()[currentPageIndex]?.markups ?? [];
+}
+
+function ensureCanvasPages(n: number): void {
+  const proj = appState.project as ProjectWithCanvas;
   if (!proj.canvasPages) proj.canvasPages = [];
-  while (proj.canvasPages.length < totalPages) {
-    proj.canvasPages.push({ markups: [], scale: undefined });
+  while (proj.canvasPages.length < n) {
+    proj.canvasPages.push({ markups: [] });
   }
 }
 
 function saveMarkup(markup: Markup): void {
-  const proj = appState.project as unknown as { canvasPages?: { markups: Markup[]; scale?: PageScale }[] };
-  if (!proj.canvasPages) return;
-  proj.canvasPages[currentPageIndex].markups.push(markup);
+  const pages = canvasPages();
+  if (!pages[currentPageIndex]) return;
+  pages[currentPageIndex].markups.push(markup);
   appState.dirty = true;
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initPdfCanvas(): void {
   const container = document.getElementById('canvas-container');
@@ -63,16 +78,23 @@ export function initPdfCanvas(): void {
 
   stageManager = createKonvaStageManager('canvas-container');
 
-  // Toolbar buttons
+  // File + tool buttons
   document.getElementById('btn-load-pdf')?.addEventListener('click', () => void handleLoadPdf());
   document.getElementById('btn-tool-select')?.addEventListener('click', () => setTool('select'));
   document.getElementById('btn-tool-scale')?.addEventListener('click', () => setTool('scale-set'));
   document.getElementById('btn-tool-linear')?.addEventListener('click', () => setTool('measure-linear'));
   document.getElementById('btn-tool-rect')?.addEventListener('click', () => setTool('measure-rect'));
   document.getElementById('btn-tool-poly')?.addEventListener('click', () => setTool('measure-poly'));
+  document.getElementById('btn-tool-count')?.addEventListener('click', () => setTool('count'));
+
+  // Zoom & fit
   document.getElementById('btn-canvas-zoom-in')?.addEventListener('click', () => zoom(1.25));
   document.getElementById('btn-canvas-zoom-out')?.addEventListener('click', () => zoom(0.8));
   document.getElementById('btn-canvas-fit')?.addEventListener('click', fitPage);
+
+  // Page navigation
+  document.getElementById('btn-prev-page')?.addEventListener('click', () => void navigatePage(-1));
+  document.getElementById('btn-next-page')?.addEventListener('click', () => void navigatePage(1));
 
   // Build tools
   const ctx = buildToolContext();
@@ -81,6 +103,7 @@ export function initPdfCanvas(): void {
   tools.set('measure-linear', new MeasureLinearTool(ctx));
   tools.set('measure-rect', new MeasureRectTool(ctx));
   tools.set('measure-poly', new MeasurePolyTool(ctx));
+  tools.set('count', new CountTool(ctx));
 
   setTool('select');
 
@@ -88,19 +111,21 @@ export function initPdfCanvas(): void {
   canvasState.on('scale-set', (data) => {
     const { scale } = data as { pageIndex: number; scale: PageScale };
     pageScale = scale;
-    const cp = (appState.project as unknown as { canvasPages?: { markups: Markup[]; scale?: PageScale }[] }).canvasPages;
-    if (cp) cp[currentPageIndex].scale = scale;
+    const pages = canvasPages();
+    if (pages[currentPageIndex]) pages[currentPageIndex].scale = scale;
     appState.dirty = true;
     updateScaleStatus();
   });
 
   // Markup transform (move/resize after bake)
   canvasState.on('markup-transform', (data) => {
-    const { id } = data as { id: string; node: { x: () => number; y: () => number } };
+    const { id } = data as { id: string };
     const markups = getPageMarkups();
     const markup = markups.find(m => m.id === id);
     if (!markup || !stageManager) return;
     stageManager.bakeTransform(markup);
+    // Re-emit updated measurement value if assigned
+    emitMeasurementValue(markup);
     appState.dirty = true;
   });
 
@@ -114,14 +139,29 @@ export function initPdfCanvas(): void {
     }
     if ((e.ctrlKey || e.metaKey) && e.key === '=') { e.preventDefault(); zoom(1.25); }
     if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoom(0.8); }
+    // Arrow keys for page navigation when no input is focused
+    if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') void navigatePage(-1);
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') void navigatePage(1);
+    }
   });
 
-  // React to project load — restore markups
-  appState.on('project-loaded', restoreMarkups);
+  // React to project load/new
+  appState.on('project-loaded', () => {
+    const proj = appState.project as ProjectWithCanvas;
+    // Restore count categories from project if saved
+    if ((proj as unknown as { countCategories?: CountCategory[] }).countCategories) {
+      countCategories = (proj as unknown as { countCategories?: CountCategory[] }).countCategories!;
+    }
+    restoreMarkups();
+  });
   appState.on('project-new', () => {
     clearCanvas();
     pdfRenderer?.destroy();
     pdfRenderer = null;
+    totalPages = 0;
+    currentPageIndex = 0;
+    updatePageNav();
     updateLoadStatus('No PDF loaded. Click "Open PDF" to load.');
   });
 
@@ -135,20 +175,45 @@ export function initPdfCanvas(): void {
   updateLoadStatus('Open a PDF to start measuring.');
 }
 
-// ── Tool management ────────────────────────────────────────────────────────────
+// ── Tool management ─────────────────────────────────────────────────────────────
 
 function setTool(name: string): void {
   activeTool?.deactivate();
   activeTool = tools.get(name) ?? null;
   activeTool?.activate();
   canvasState.setTool(name as import('../canvas-state/canvasState.ts').CanvasToolType);
-  // Update active button styling
   document.querySelectorAll<HTMLElement>('[data-canvas-tool]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.canvasTool === name);
   });
+  // Show/hide count panel
+  const countPanel = document.getElementById('count-panel');
+  if (countPanel) {
+    countPanel.style.display = name === 'count' ? 'flex' : 'none';
+    if (name === 'count') renderCountPanel();
+  }
 }
 
-// ── PDF loading ────────────────────────────────────────────────────────────────
+// ── Page navigation ─────────────────────────────────────────────────────────────
+
+async function navigatePage(delta: number): Promise<void> {
+  if (!pdfRenderer) return;
+  const next = currentPageIndex + delta;
+  if (next < 0 || next >= totalPages) return;
+  await renderPage(next);
+}
+
+function updatePageNav(): void {
+  const prevBtn = document.getElementById('btn-prev-page') as HTMLButtonElement | null;
+  const nextBtn = document.getElementById('btn-next-page') as HTMLButtonElement | null;
+  const indicator = document.getElementById('canvas-page-indicator');
+
+  const hasPdf = totalPages > 0;
+  if (prevBtn) prevBtn.disabled = !hasPdf || currentPageIndex <= 0;
+  if (nextBtn) nextBtn.disabled = !hasPdf || currentPageIndex >= totalPages - 1;
+  if (indicator) indicator.textContent = hasPdf ? `${currentPageIndex + 1} / ${totalPages}` : '— / —';
+}
+
+// ── PDF loading ─────────────────────────────────────────────────────────────────
 
 async function handleLoadPdf(): Promise<void> {
   let bytes: Uint8Array | null = null;
@@ -174,8 +239,8 @@ async function loadPdfBytes(bytes: Uint8Array, _name: string): Promise<void> {
   try {
     pdfRenderer?.destroy();
     pdfRenderer = await loadPdf(bytes);
-    const total = pdfRenderer.numPages;
-    ensureCanvasPages(total);
+    totalPages = pdfRenderer.numPages;
+    ensureCanvasPages(totalPages);
     currentPageIndex = 0;
     await renderPage(0);
     updateLoadStatus('');
@@ -202,40 +267,44 @@ async function renderPage(pageIndex: number): Promise<void> {
   canvasState.setZoom(zoom);
 
   // Restore scale for this page
-  const cp = (appState.project as unknown as { canvasPages?: { markups: Markup[]; scale?: PageScale }[] }).canvasPages;
-  pageScale = cp?.[pageIndex]?.scale ?? { pointsPerUnit: 0, calibrationUnit: 'ft', calibrated: false };
+  const pages = canvasPages();
+  pageScale = pages[pageIndex]?.scale ?? { pointsPerUnit: 0, calibrationUnit: 'ft', calibrated: false };
   updateScaleStatus();
 
   // Restore markups
   stageManager.clearMarkups();
-  const markups = getPageMarkups();
-  for (const m of markups) stageManager.addMarkupNode(m);
+  for (const m of getPageMarkups()) stageManager.addMarkupNode(m);
+
+  updatePageNav();
 }
 
-// ── Markup management ─────────────────────────────────────────────────────────
+// ── Markup management ──────────────────────────────────────────────────────────
 
 function addMarkup(markup: Markup): void {
   if (!stageManager) return;
   markup.id = generateId();
   stageManager.addMarkupNode(markup);
   saveMarkup(markup);
-
-  // Emit measurement value to estimate scope
   emitMeasurementValue(markup);
-
-  // Ask user if they want to assign this measurement to a task scope input
   showAssignPrompt(markup);
 }
 
 function deleteMarkup(id: string): void {
   if (!stageManager) return;
   stageManager.removeMarkupNode(id);
-  const cp = (appState.project as unknown as { canvasPages?: { markups: Markup[] }[] }).canvasPages;
-  if (cp?.[currentPageIndex]) {
-    cp[currentPageIndex].markups = cp[currentPageIndex].markups.filter(m => m.id !== id);
+  const pages = canvasPages();
+  if (pages[currentPageIndex]) {
+    pages[currentPageIndex].markups = pages[currentPageIndex].markups.filter(m => m.id !== id);
   }
   canvasState.setSelection(null);
   appState.dirty = true;
+
+  // If it was a count markup, re-emit the new total for its category
+  const allMarkups = canvasPages().flatMap(p => p.markups);
+  const deletedMarkup = allMarkups.find(m => m.id === id);
+  if (deletedMarkup?.type === 'count') {
+    reemitCountTotal((deletedMarkup as CountMarkup).categoryId);
+  }
 }
 
 function clearCanvas(): void {
@@ -245,17 +314,134 @@ function clearCanvas(): void {
 function restoreMarkups(): void {
   if (!stageManager) return;
   stageManager.clearMarkups();
-  const markups = getPageMarkups();
-  for (const m of markups) stageManager.addMarkupNode(m);
+  for (const m of getPageMarkups()) stageManager.addMarkupNode(m);
 }
 
-// ── Measurement value extraction ──────────────────────────────────────────────
+// ── Count tool ─────────────────────────────────────────────────────────────────
 
 /**
- * Extract the numeric measurement value from a markup and propagate it
- * to any assigned scope input via applyMeasurement().
+ * Called by the CountTool when a marker is placed.
+ * Renders it, saves it, then re-emits the running total for its category.
  */
+function handleCountAdd(markup: CountMarkup): void {
+  if (!stageManager) return;
+  stageManager.addMarkupNode(markup);
+  saveMarkup(markup);
+  // Update count panel badge immediately
+  renderCountPanel();
+  // Apply count total to any assigned scope
+  reemitCountTotal(markup.categoryId);
+  // Offer assignment if not yet assigned
+  const virtualId = countVirtualId(currentPageIndex, markup.categoryId);
+  if (!appState.project.measureAssignments.find(a => a.markupId === virtualId)) {
+    showCountAssignPrompt(markup.categoryId);
+  }
+}
+
+/** Stable virtual ID that represents the total count for a (page, category) pair. */
+function countVirtualId(pageIndex: number, categoryId: string): string {
+  return `count-pg${pageIndex}-${categoryId}`;
+}
+
+/** Count how many markers exist for a category on the current page and push to scope. */
+function reemitCountTotal(categoryId: string): void {
+  const total = getPageMarkups().filter(
+    m => m.type === 'count' && (m as CountMarkup).categoryId === categoryId
+  ).length;
+  const virtualId = countVirtualId(currentPageIndex, categoryId);
+  applyMeasurement(virtualId, total);
+  renderCountPanel();
+}
+
+function getActiveCountCategory(): CountCategory | null {
+  return countCategories.find(c => c.id === activeCountCategoryId) ?? countCategories[0] ?? null;
+}
+
+function ensureDefaultCategory(): void {
+  if (countCategories.length === 0) {
+    countCategories.push({
+      id: generateId(),
+      name: 'Item',
+      symbol: COUNT_SYMBOLS[0],
+      color: COUNT_COLORS[0],
+    });
+    activeCountCategoryId = countCategories[0].id;
+  }
+}
+
+function addCountCategory(): void {
+  const idx = countCategories.length % COUNT_COLORS.length;
+  const cat: CountCategory = {
+    id: generateId(),
+    name: `Item ${countCategories.length + 1}`,
+    symbol: COUNT_SYMBOLS[idx % COUNT_SYMBOLS.length],
+    color: COUNT_COLORS[idx],
+  };
+  countCategories.push(cat);
+  activeCountCategoryId = cat.id;
+  renderCountPanel();
+}
+
+function deleteCountCategory(id: string): void {
+  countCategories = countCategories.filter(c => c.id !== id);
+  if (activeCountCategoryId === id) {
+    activeCountCategoryId = countCategories[0]?.id ?? null;
+  }
+  renderCountPanel();
+}
+
+function renderCountPanel(): void {
+  const panel = document.getElementById('count-panel');
+  if (!panel) return;
+
+  ensureDefaultCategory();
+
+  const currentMarkups = getPageMarkups();
+  const catChips = countCategories.map(cat => {
+    const count = currentMarkups.filter(
+      m => m.type === 'count' && (m as CountMarkup).categoryId === cat.id
+    ).length;
+    const isActive = cat.id === (activeCountCategoryId ?? countCategories[0].id);
+    return `
+      <div class="count-cat-chip ${isActive ? 'active' : ''}" data-cat-id="${cat.id}" title="${cat.name}">
+        <span class="count-cat-dot" style="background:${cat.color}"></span>
+        <span class="count-cat-name">${cat.name}</span>
+        <span class="count-cat-badge">${count}</span>
+        <button class="count-cat-assign" data-assign-cat="${cat.id}" title="Assign count to scope input">→</button>
+        <button class="count-cat-del" data-del-cat="${cat.id}" title="Delete category">✕</button>
+      </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <span class="count-panel-label">Categories:</span>
+    ${catChips}
+    <button class="canvas-tb-btn" id="btn-add-count-cat" title="Add Category">+</button>`;
+
+  // Wire events
+  panel.querySelectorAll('.count-cat-chip').forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.dataset.delCat || target.dataset.assignCat) return;
+      const catId = (chip as HTMLElement).dataset.catId;
+      if (catId) { activeCountCategoryId = catId; renderCountPanel(); }
+    });
+  });
+  panel.querySelectorAll('[data-del-cat]').forEach(btn => {
+    btn.addEventListener('click', () => deleteCountCategory((btn as HTMLElement).dataset.delCat!));
+  });
+  panel.querySelectorAll('[data-assign-cat]').forEach(btn => {
+    btn.addEventListener('click', () => showCountAssignPrompt((btn as HTMLElement).dataset.assignCat!));
+  });
+  document.getElementById('btn-add-count-cat')?.addEventListener('click', addCountCategory);
+}
+
+// ── Measurement value extraction ───────────────────────────────────────────────
+
 function emitMeasurementValue(markup: Markup): void {
+  if (markup.type === 'count') {
+    // Count is handled by reemitCountTotal; skip here
+    return;
+  }
   if (!pageScale.calibrated) return;
 
   let value = 0;
@@ -265,12 +451,10 @@ function emitMeasurementValue(markup: Markup): void {
     const m = markup as import('../model/document.ts').MeasureLinearMarkup;
     const dx = m.x2 - m.x1;
     const dy = m.y2 - m.y1;
-    const distPts = Math.sqrt(dx * dx + dy * dy);
-    value = distPts / ppi / 12; // convert to feet
+    value = Math.sqrt(dx * dx + dy * dy) / ppi / 12; // feet
   } else if (markup.type === 'measure-rect') {
     const m = markup as import('../model/document.ts').MeasureRectMarkup;
-    const areaPts2 = m.width * m.height;
-    value = areaPts2 / (ppi * ppi) / 144; // sq ft
+    value = (m.width * m.height) / (ppi * ppi) / 144; // sq ft
   } else if (markup.type === 'measure-poly') {
     const m = markup as import('../model/document.ts').MeasurePolyMarkup;
     let area = 0;
@@ -279,16 +463,16 @@ function emitMeasurementValue(markup: Markup): void {
       const q = m.points[(i + 1) % m.points.length];
       area += p.x * q.y - q.x * p.y;
     }
-    const areaPts2 = Math.abs(area) / 2;
-    value = areaPts2 / (ppi * ppi) / 144; // sq ft
+    value = Math.abs(area) / 2 / (ppi * ppi) / 144; // sq ft
   }
 
   applyMeasurement(markup.id, value);
 }
 
-// ── Assign prompt ─────────────────────────────────────────────────────────────
+// ── Assign prompts ─────────────────────────────────────────────────────────────
 
 function showAssignPrompt(markup: Markup): void {
+  if (markup.type === 'count') return; // count uses showCountAssignPrompt
   const tasks = appState.project.tasks;
   if (tasks.length === 0) return;
 
@@ -300,7 +484,7 @@ function showAssignPrompt(markup: Markup): void {
   const defaultRole = roleMap[markup.type] ?? 'length';
 
   const taskOptions = tasks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  const roleOptions = ['length', 'width', 'height', 'area', 'count']
+  const roleOptions = ['length', 'width', 'height', 'area']
     .map(r => `<option value="${r}" ${r === defaultRole ? 'selected' : ''}>${r}</option>`).join('');
 
   const body = `
@@ -325,7 +509,6 @@ function showAssignPrompt(markup: Markup): void {
     const label = (document.getElementById('assign-label') as HTMLInputElement)?.value ?? '';
     if (!taskId) return;
 
-    // Remove any existing assignment for this markup
     appState.project.measureAssignments = appState.project.measureAssignments.filter(a => a.markupId !== markup.id);
     appState.project.measureAssignments.push({
       markupId: markup.id,
@@ -334,14 +517,60 @@ function showAssignPrompt(markup: Markup): void {
       label: label || `${markup.type} ${markup.id.slice(-4)}`,
     });
     appState.dirty = true;
-
-    // Apply the current measurement value
     emitMeasurementValue(markup);
     appState.emit('scope-changed');
   }).catch(() => { /* user cancelled */ });
 }
 
-// ── Zoom / fit ─────────────────────────────────────────────────────────────────
+function showCountAssignPrompt(categoryId: string): void {
+  const tasks = appState.project.tasks;
+  if (tasks.length === 0) return;
+
+  const cat = countCategories.find(c => c.id === categoryId);
+  if (!cat) return;
+
+  const virtualId = countVirtualId(currentPageIndex, categoryId);
+  const existing = appState.project.measureAssignments.find(a => a.markupId === virtualId);
+
+  const taskOptions = tasks.map(t =>
+    `<option value="${t.id}" ${existing?.taskId === t.id ? 'selected' : ''}>${t.name}</option>`
+  ).join('');
+
+  const count = getPageMarkups().filter(
+    m => m.type === 'count' && (m as CountMarkup).categoryId === categoryId
+  ).length;
+
+  const body = `
+    <p>Assign <strong>${cat.name}</strong> count (<strong>${count}</strong> markers) to a task scope input.</p>
+    <p style="color:var(--color-text-muted);font-size:12px">The live count will update automatically as markers are added or removed.</p>
+    <div class="form-row" style="margin-top:12px">
+      <label>Task:</label>
+      <select id="count-assign-task" style="flex:1">${taskOptions}</select>
+    </div>
+    <div class="form-row">
+      <label>Label:</label>
+      <input id="count-assign-label" type="text" value="${existing?.label ?? cat.name + ' count'}" style="flex:1"/>
+    </div>`;
+
+  showModal(`Assign Count: ${cat.name}`, body, 'Assign').then(result => {
+    if (!result) return;
+    const taskId = (document.getElementById('count-assign-task') as HTMLSelectElement)?.value ?? '';
+    const label = (document.getElementById('count-assign-label') as HTMLInputElement)?.value ?? cat.name;
+    if (!taskId) return;
+
+    appState.project.measureAssignments = appState.project.measureAssignments.filter(a => a.markupId !== virtualId);
+    appState.project.measureAssignments.push({
+      markupId: virtualId,
+      taskId,
+      role: 'count',
+      label,
+    });
+    appState.dirty = true;
+    reemitCountTotal(categoryId);
+  }).catch(() => { /* cancelled */ });
+}
+
+// ── Zoom / fit ──────────────────────────────────────────────────────────────────
 
 function zoom(factor: number): void {
   if (!stageManager) return;
@@ -360,16 +589,15 @@ function fitPage(): void {
   canvasState.setZoom(z);
 }
 
-// ── Tool context ──────────────────────────────────────────────────────────────
+// ── Tool context ───────────────────────────────────────────────────────────────
 
 function buildToolContext(): ToolContext {
   return {
     get stageManager() { return stageManager!; },
     onMarkupAdd: addMarkup,
     onMarkupUpdate: (id, partial) => {
-      const cp = (appState.project as unknown as { canvasPages?: { markups: Markup[] }[] }).canvasPages;
-      const markups = cp?.[currentPageIndex]?.markups ?? [];
-      const m = markups.find(mx => mx.id === id);
+      const pages = canvasPages();
+      const m = pages[currentPageIndex]?.markups.find(mx => mx.id === id);
       if (m) Object.assign(m, partial);
       appState.dirty = true;
     },
@@ -379,16 +607,19 @@ function buildToolContext(): ToolContext {
     getScale: () => pageScale,
     getUnits: () => canvasState.state.units,
     showModal,
+    // Count tool
+    getActiveCountCategory,
+    getCountSymbolSize: () => countSymbolSize,
+    onCountAdd: handleCountAdd,
   };
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// ── Modal ──────────────────────────────────────────────────────────────────────
 
 let _resolveModal: ((v: string | null) => void) | null = null;
 
 function showModal(title: string, body: string, okText = 'OK'): Promise<string | null> {
-  const existing = document.getElementById('canvas-modal');
-  if (existing) existing.remove();
+  document.getElementById('canvas-modal')?.remove();
 
   const div = document.createElement('div');
   div.id = 'canvas-modal';
@@ -415,7 +646,7 @@ function showModal(title: string, body: string, okText = 'OK'): Promise<string |
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function pickPdfFileBrowser(): Promise<Uint8Array | null> {
   return new Promise(resolve => {
@@ -441,14 +672,13 @@ function updateScaleStatus(): void {
   const el = document.getElementById('canvas-scale-status');
   if (!el) return;
   if (pageScale.calibrated) {
-    const ppi = pageScale.pointsPerUnit;
-    const reInch = ppi / 72;
-    el.textContent = `Scale: 1" = ${(reInch >= 12 ? (reInch / 12).toFixed(1) + "'" : reInch.toFixed(2) + '"')}`;
+    const reInch = pageScale.pointsPerUnit / 72;
+    el.textContent = `Scale: 1" = ${reInch >= 12 ? (reInch / 12).toFixed(1) + "'" : reInch.toFixed(2) + '"'}`;
   } else {
     el.textContent = 'Scale: not set';
   }
 }
 
-// Suppress unused
+// Suppress unused import warning
 void computeScale;
 void _resolveModal;

@@ -11,7 +11,8 @@ import { DEFAULT_STROKE_STYLE, DEFAULT_UNITS } from '../model/document.ts';
 export type CanvasToolType =
   | 'select' | 'pan'
   | 'scale-set'
-  | 'measure-linear' | 'measure-rect' | 'measure-poly';
+  | 'measure-linear' | 'measure-rect' | 'measure-poly'
+  | 'count';
 
 type StateListener = (s: Readonly<CanvasState>) => void;
 type EventListener = (data: unknown) => void;

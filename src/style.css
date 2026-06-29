@@ -859,6 +859,105 @@ html, body {
 
 .stale-banner button:hover { background: rgba(245,158,11,0.15); }
 
+/* ── Page navigation ───────────────────────────────────────────────────────── */
+
+.canvas-page-indicator {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  min-width: 52px;
+  text-align: center;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ── Count panel ────────────────────────────────────────────────────────────── */
+
+.count-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--color-surface2);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  min-height: 38px;
+}
+
+.count-panel-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.count-cat-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.count-cat-chip.active {
+  border-color: var(--color-accent);
+  background: rgba(59,130,246,0.1);
+}
+
+.count-cat-chip:hover { background: var(--color-surface2); }
+
+.count-cat-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.count-cat-name {
+  color: var(--color-text);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count-cat-badge {
+  background: var(--color-surface2);
+  color: var(--color-text-muted);
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.count-cat-chip.active .count-cat-badge {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.count-cat-assign,
+.count-cat-del {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.count-cat-assign:hover { color: var(--color-accent); background: rgba(59,130,246,0.15); }
+.count-cat-del:hover    { color: var(--color-danger); background: rgba(239,68,68,0.15); }
+
 /* ── Scrollbar ──────────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }

@@ -8,7 +8,8 @@
 
 import Konva from 'konva';
 import type {
-  Markup, MeasureLinearMarkup, MeasureRectMarkup, MeasurePolyMarkup, Point,
+  Markup, MeasureLinearMarkup, MeasureRectMarkup, MeasurePolyMarkup,
+  CountMarkup, CountSymbol, Point,
 } from '../model/document.ts';
 import {
   pdfToKonva, pdfPointsToKonva, pdfRectToKonva,
@@ -35,6 +36,25 @@ export interface KonvaStageManager {
   clearMarkups(): void;
   getLayerPointer(): Point | null;
   draw(): void;
+}
+
+/** Draw a count symbol shape centred at (0, 0) within a Konva.Group. */
+function createCountSymbolShape(symbol: CountSymbol, color: string, size: number): Konva.Shape {
+  switch (symbol) {
+    case 'square':
+      return new Konva.Rect({ x: -size / 2, y: -size / 2, width: size, height: size, fill: color, stroke: '#fff', strokeWidth: 1 });
+    case 'triangle': {
+      const h = size * Math.sqrt(3) / 2;
+      return new Konva.Line({ points: [0, -h * 2 / 3, size / 2, h / 3, -size / 2, h / 3], closed: true, fill: color, stroke: '#fff', strokeWidth: 1 });
+    }
+    case 'diamond':
+      return new Konva.Line({ points: [0, -size / 2, size / 2, 0, 0, size / 2, -size / 2, 0], closed: true, fill: color, stroke: '#fff', strokeWidth: 1 });
+    case 'cross':
+      return new Konva.Line({ points: [-size / 2, 0, size / 2, 0, NaN, NaN, 0, -size / 2, 0, size / 2], stroke: color, strokeWidth: size / 4 });
+    case 'circle':
+    default:
+      return new Konva.Circle({ radius: size / 2, fill: color, stroke: '#fff', strokeWidth: 1 });
+  }
 }
 
 export function hexWithOpacity(hex: string, opacity: number): string {
@@ -141,6 +161,16 @@ function createMarkupNode(markup: Markup, pageHeightPts: number): Konva.Node {
       break;
     }
 
+    case 'count': {
+      const m = markup as CountMarkup;
+      const pos = pdfToKonva(m.x, m.y, pageHeightPts);
+      const size = m.size ?? 12;
+      const group = new Konva.Group({ name: 'markup', id: markup.id, x: pos.x, y: pos.y });
+      group.add(createCountSymbolShape(m.symbol, m.color, size));
+      node = group;
+      break;
+    }
+
     default:
       // Unsupported markup type — render a placeholder group
       node = new Konva.Group({ name: 'markup', id: markup.id });
@@ -174,6 +204,11 @@ function bakeTransformForMarkup(markup: Markup, node: Konva.Node, pageHeightPts:
       const k2 = { x: k.x + x, y: k.y + y };
       return konvaToPdf(k2.x, k2.y, pageHeightPts);
     });
+    node.x(0); node.y(0);
+  } else if (markup.type === 'count') {
+    const m = markup as CountMarkup;
+    const pdf = konvaToPdf(m.x + x, m.y + y, pageHeightPts);
+    m.x = pdf.x; m.y = pdf.y;
     node.x(0); node.y(0);
   }
 }

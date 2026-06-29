@@ -1,6 +1,7 @@
 import type Konva from 'konva';
 import type { KonvaStageManager } from '../canvas/stage.ts';
 import type { CanvasToolType } from '../canvas-state/canvasState.ts';
+import type { CountCategory, CountMarkup } from '../model/document.ts';
 
 export interface ToolContext {
   stageManager: KonvaStageManager;
@@ -12,7 +13,13 @@ export interface ToolContext {
   getScale: () => import('../model/document.ts').PageScale;
   getUnits: () => import('../model/document.ts').UnitsSettings;
   showModal: (title: string, body: string, okText?: string) => Promise<string | null>;
+  // Count tool support
+  getActiveCountCategory: () => CountCategory | null;
+  getCountSymbolSize: () => number;
+  onCountAdd: (markup: CountMarkup) => void;
 }
+
+export type { CountCategory, CountMarkup };
 
 export abstract class BaseTool {
   readonly type: CanvasToolType;
