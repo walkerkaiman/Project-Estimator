@@ -12,6 +12,7 @@ import { saveCatalog } from '../storage/catalogStore.ts';
 import { markSnapshotStale } from '../estimate/snapshot.ts';
 import type { Material, Task } from '../estimate/catalog.ts';
 import { exportCatalogCSV, handleImportCSV } from './csvBulk.ts';
+import { showPrompt, showConfirm } from './modal.ts';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -175,8 +176,11 @@ function attachTabListeners(body: HTMLElement, tab: Tab, modal: HTMLElement): vo
     body.querySelectorAll<HTMLElement>('[data-delete-mat]').forEach(btn => {
       btn.addEventListener('click', () => {
         const i = parseInt(btn.dataset.deleteMat!);
-        appState.catalog.materials.splice(i, 1);
-        showTab(modal, 'materials');
+        void showConfirm('Delete this material from the catalog?').then(ok => {
+          if (!ok) return;
+          appState.catalog.materials.splice(i, 1);
+          showTab(modal, 'materials');
+        });
       });
     });
 
@@ -217,28 +221,34 @@ function attachTabListeners(body: HTMLElement, tab: Tab, modal: HTMLElement): vo
     body.querySelectorAll<HTMLElement>('[data-delete-cat-phase]').forEach(btn => {
       btn.addEventListener('click', () => {
         const i = parseInt(btn.dataset.deleteCatPhase!);
-        const phId = appState.catalog.phases[i]?.id;
-        if (!confirm(`Delete phase and all its tasks from the catalog?`)) return;
-        appState.catalog.phases.splice(i, 1);
-        if (phId) appState.catalog.tasks = appState.catalog.tasks.filter(t => t.phaseId !== phId);
-        showTab(modal, 'phases');
+        const ph = appState.catalog.phases[i];
+        void showConfirm(`Delete phase "${ph?.name ?? ''}" and all its tasks from the catalog?`).then(ok => {
+          if (!ok) return;
+          const phId = appState.catalog.phases[i]?.id;
+          appState.catalog.phases.splice(i, 1);
+          if (phId) appState.catalog.tasks = appState.catalog.tasks.filter(t => t.phaseId !== phId);
+          showTab(modal, 'phases');
+        });
       });
     });
 
     body.querySelectorAll<HTMLElement>('[data-delete-cat-task]').forEach(btn => {
       btn.addEventListener('click', () => {
         const i = parseInt(btn.dataset.deleteCatTask!);
-        if (!confirm(`Delete this task from the catalog?`)) return;
-        appState.catalog.tasks.splice(i, 1);
-        showTab(modal, 'phases');
+        void showConfirm('Delete this task from the catalog?').then(ok => {
+          if (!ok) return;
+          appState.catalog.tasks.splice(i, 1);
+          showTab(modal, 'phases');
+        });
       });
     });
 
     body.querySelector('#add-phase-cat-btn')?.addEventListener('click', () => {
-      const name = prompt('New phase name:');
-      if (!name?.trim()) return;
-      appState.catalog.phases.push({ id: `phase-${Date.now()}`, name: name.trim(), order: appState.catalog.phases.length });
-      showTab(modal, 'phases');
+      void showPrompt('New Phase', '', 'Phase name').then(name => {
+        if (!name) return;
+        appState.catalog.phases.push({ id: `phase-${Date.now()}`, name, order: appState.catalog.phases.length });
+        showTab(modal, 'phases');
+      });
     });
   }
 }

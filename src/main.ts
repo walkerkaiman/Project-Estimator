@@ -12,11 +12,13 @@ import { openBidExport } from './ui/bidExport.ts';
 import { initPdfCanvas } from './ui/pdfCanvas.ts';
 import { isTauri } from './tauri/integration.ts';
 import { refreshSnapshotPrices } from './estimate/snapshot.ts';
+import { showConfirm } from './ui/modal.ts';
 
 async function init(): Promise<void> {
   // Load the catalog (app-data or localStorage or example)
   appState.catalog = await loadCatalog();
-  appState.emit('catalog-loaded');
+  // Pre-seed the project from the catalog so phases are visible immediately on first run
+  appState.newProjectFromCatalog();
 
   // Wire toolbar
   document.getElementById('btn-new-project')?.addEventListener('click', handleNewProject);
@@ -46,15 +48,19 @@ async function init(): Promise<void> {
 }
 
 function handleNewProject(): void {
-  if (appState.dirty && !confirm('Discard unsaved changes and start a new project?')) return;
-  appState.newProjectFromCatalog();
+  if (!appState.dirty) { appState.newProjectFromCatalog(); return; }
+  void showConfirm('Discard unsaved changes and start a new project?', 'Discard').then(ok => {
+    if (ok) appState.newProjectFromCatalog();
+  });
 }
 
 function handleRefreshPrices(): void {
-  if (!confirm('Refresh material prices and labor rates from the master catalog?\n\nThis will update your price snapshot but keep all scope inputs.')) return;
-  appState.project = refreshSnapshotPrices(appState.project, appState.catalog);
-  appState.dirty = true;
-  appState.emit('project-changed');
+  void showConfirm('Refresh material prices and labor rates from the master catalog? Scope inputs are kept.', 'Refresh').then(ok => {
+    if (!ok) return;
+    appState.project = refreshSnapshotPrices(appState.project, appState.catalog);
+    appState.dirty = true;
+    appState.emit('project-changed');
+  });
 }
 
 async function handleOpenProject(): Promise<void> {

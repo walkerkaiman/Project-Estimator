@@ -20,6 +20,7 @@ import type { RecipeLine, ScopeInputDef, Phase } from '../estimate/catalog.ts';
 import type { ScopeEntry, SnapshotTask } from '../estimate/project.ts';
 import { getMaterialCost } from '../estimate/snapshot.ts';
 import { saveCatalog } from '../storage/catalogStore.ts';
+import { showPrompt, showConfirm } from './modal.ts';
 
 export function initEstimateUI(): void {
   appState.on('project-new', renderAll);
@@ -73,13 +74,14 @@ function renderSidebar(): void {
   });
 
   document.getElementById('btn-add-phase')?.addEventListener('click', () => {
-    const name = prompt('New phase name:');
-    if (!name?.trim()) return;
-    const id = `phase-${Date.now()}`;
-    appState.project.phases.push({ id, name: name.trim(), order: getPhases().length });
-    appState.dirty = true;
-    activePhaseId = id;
-    appState.emit('project-changed');
+    void showPrompt('New Phase', '', 'Phase name').then(name => {
+      if (!name) return;
+      const id = `phase-${Date.now()}`;
+      appState.project.phases.push({ id, name, order: getPhases().length });
+      appState.dirty = true;
+      activePhaseId = id;
+      appState.emit('project-changed');
+    });
   });
 }
 
@@ -203,11 +205,12 @@ function attachWorkspaceListeners(root: HTMLElement, phase: Phase): void {
   root.querySelectorAll<HTMLElement>('.phase-title-editable').forEach(el => {
     el.addEventListener('dblclick', () => {
       const phaseId = el.dataset.phase!;
-      const current = el.textContent ?? '';
-      const name = prompt('Rename phase:', current);
-      if (!name?.trim() || name === current) return;
-      const ph = appState.project.phases.find(p => p.id === phaseId);
-      if (ph) { ph.name = name.trim(); appState.dirty = true; appState.emit('project-changed'); }
+      const current = el.textContent?.trim() ?? '';
+      void showPrompt('Rename Phase', current).then(name => {
+        if (!name || name === current) return;
+        const ph = appState.project.phases.find(p => p.id === phaseId);
+        if (ph) { ph.name = name; appState.dirty = true; appState.emit('project-changed'); }
+      });
     });
   });
 
@@ -215,11 +218,12 @@ function attachWorkspaceListeners(root: HTMLElement, phase: Phase): void {
   root.querySelectorAll<HTMLElement>('.task-name-editable').forEach(el => {
     el.addEventListener('dblclick', () => {
       const taskId = el.dataset.task!;
-      const current = el.textContent ?? '';
-      const name = prompt('Rename task:', current);
-      if (!name?.trim() || name === current) return;
-      const t = appState.project.tasks.find(tk => tk.id === taskId);
-      if (t) { t.name = name.trim(); appState.dirty = true; appState.emit('project-changed'); }
+      const current = el.textContent?.trim() ?? '';
+      void showPrompt('Rename Task', current).then(name => {
+        if (!name || name === current) return;
+        const t = appState.project.tasks.find(tk => tk.id === taskId);
+        if (t) { t.name = name; appState.dirty = true; appState.emit('project-changed'); }
+      });
     });
   });
 
@@ -228,12 +232,14 @@ function attachWorkspaceListeners(root: HTMLElement, phase: Phase): void {
     btn.addEventListener('click', () => {
       const phaseId = btn.dataset.deletePhase!;
       const ph = appState.project.phases.find(p => p.id === phaseId);
-      if (!confirm(`Delete phase "${ph?.name ?? phaseId}" and all its tasks?`)) return;
-      appState.project.phases = appState.project.phases.filter(p => p.id !== phaseId);
-      appState.project.tasks = appState.project.tasks.filter(t => t.phaseId !== phaseId);
-      appState.dirty = true;
-      activePhaseId = appState.project.phases[0]?.id ?? null;
-      appState.emit('project-changed');
+      void showConfirm(`Delete phase "${ph?.name ?? phaseId}" and all its tasks?`).then(ok => {
+        if (!ok) return;
+        appState.project.phases = appState.project.phases.filter(p => p.id !== phaseId);
+        appState.project.tasks  = appState.project.tasks.filter(t => t.phaseId !== phaseId);
+        appState.dirty = true;
+        activePhaseId = appState.project.phases[0]?.id ?? null;
+        appState.emit('project-changed');
+      });
     });
   });
 
@@ -242,33 +248,36 @@ function attachWorkspaceListeners(root: HTMLElement, phase: Phase): void {
     btn.addEventListener('click', () => {
       const taskId = btn.dataset.deleteTask!;
       const t = appState.project.tasks.find(tk => tk.id === taskId);
-      if (!confirm(`Delete task "${t?.name ?? taskId}"?`)) return;
-      appState.project.tasks = appState.project.tasks.filter(tk => tk.id !== taskId);
-      appState.project.scope = appState.project.scope.filter(s => s.taskId !== taskId);
-      appState.dirty = true;
-      appState.emit('project-changed');
+      void showConfirm(`Delete task "${t?.name ?? taskId}"?`).then(ok => {
+        if (!ok) return;
+        appState.project.tasks = appState.project.tasks.filter(tk => tk.id !== taskId);
+        appState.project.scope = appState.project.scope.filter(s => s.taskId !== taskId);
+        appState.dirty = true;
+        appState.emit('project-changed');
+      });
     });
   });
 
   // Add task
   root.querySelectorAll<HTMLElement>('[data-phase].add-task-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const name = prompt('New task name:');
-      if (!name?.trim()) return;
-      const id = `task-${Date.now()}`;
-      const newTask: SnapshotTask = {
-        id,
-        phaseId: phase.id,
-        name: name.trim(),
-        laborUnit: 'LF',
-        laborRate: 0,
-        laborQtyFormula: 'Length',
-        scopeInputs: [{ role: 'length', label: 'Length (ft)', unit: 'ft', required: true }],
-        recipe: [],
-      };
-      appState.project.tasks.push(newTask);
-      appState.dirty = true;
-      appState.emit('project-changed');
+      void showPrompt('New Task', '', 'Task name').then(name => {
+        if (!name) return;
+        const id = `task-${Date.now()}`;
+        const newTask: SnapshotTask = {
+          id,
+          phaseId: phase.id,
+          name,
+          laborUnit: 'LF',
+          laborRate: 0,
+          laborQtyFormula: 'Length',
+          scopeInputs: [{ role: 'length', label: 'Length (ft)', unit: 'ft', required: true }],
+          recipe: [],
+        };
+        appState.project.tasks.push(newTask);
+        appState.dirty = true;
+        appState.emit('project-changed');
+      });
     });
   });
 }
