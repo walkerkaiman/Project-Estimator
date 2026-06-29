@@ -20,6 +20,7 @@ export type AppEvent =
   | 'project-loaded'
   | 'project-changed'
   | 'scope-changed'
+  | 'phase-changed'
   | 'totals-updated';
 
 type Listener = () => void;
@@ -35,6 +36,9 @@ class AppState {
 
   /** Whether there are unsaved changes. */
   dirty = false;
+
+  /** The phase currently active in the estimate sidebar. Canvas uses this to filter markup visibility. */
+  activePhaseId: string | null = null;
 
   private listeners: Map<AppEvent, Set<Listener>> = new Map();
 

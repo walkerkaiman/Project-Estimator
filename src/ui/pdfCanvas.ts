@@ -24,7 +24,11 @@ import { BaseTool, type ToolContext } from '../tools/baseTool.ts';
 import type { Markup, PageScale, CountCategory, CountMarkup } from '../model/document.ts';
 import { DEFAULT_STROKE_STYLE, COUNT_SYMBOLS, COUNT_COLORS, generateId } from '../model/document.ts';
 import { computeScale } from '../measure/scale.ts';
-import { applyMeasurement } from '../estimate/measureAssign.ts';
+import {
+  applyMeasurement, getAssignmentForMarkup,
+  clearMarkupValueCache, recomputeSlotTotal,
+} from '../estimate/measureAssign.ts';
+import { getTaskColor, DEFAULT_MARKUP_COLOR } from '../estimate/taskColors.ts';
 import { appState } from '../appState.ts';
 import { isTauri } from '../tauri/integration.ts';
 
@@ -176,14 +180,15 @@ export function initPdfCanvas(): void {
 
   // React to project load/new
   appState.on('project-loaded', () => {
+    clearMarkupValueCache();
     const proj = appState.project as ProjectWithCanvas;
-    // Restore count categories from project if saved
     if ((proj as unknown as { countCategories?: CountCategory[] }).countCategories) {
       countCategories = (proj as unknown as { countCategories?: CountCategory[] }).countCategories!;
     }
     restoreMarkups();
   });
   appState.on('project-new', () => {
+    clearMarkupValueCache();
     clearCanvas();
     pdfRenderer?.destroy();
     pdfRenderer = null;
@@ -191,6 +196,11 @@ export function initPdfCanvas(): void {
     currentPageIndex = 0;
     updatePageNav();
     updateLoadStatus('No PDF loaded. Click "Open PDF" to load.');
+  });
+
+  // Phase selection → update markup visibility on canvas
+  appState.on('phase-changed', () => {
+    updateMarkupVisibility();
   });
 
   // Resize observer
@@ -317,9 +327,13 @@ async function renderPage(pageIndex: number): Promise<void> {
   pageScale = pages[pageIndex]?.scale ?? { pointsPerUnit: 0, calibrationUnit: 'ft', calibrated: false };
   updateScaleStatus();
 
-  // Restore markups
+  // Restore markups with task colors and phase visibility
+  applyTaskColorsToPageMarkups();
   stageManager.clearMarkups();
   for (const m of getPageMarkups()) stageManager.addMarkupNode(m);
+  // Re-populate cache for this page so multi-markup sums are correct
+  for (const m of getPageMarkups()) emitMeasurementValue(m);
+  updateMarkupVisibility();
 
   updatePageNav();
 }
@@ -337,19 +351,28 @@ function addMarkup(markup: Markup): void {
 
 function deleteMarkup(id: string): void {
   if (!stageManager) return;
+
+  // Capture assignment BEFORE removing from markups array
+  const assignment = getAssignmentForMarkup(id);
+
   stageManager.removeMarkupNode(id);
   const pages = canvasPages();
   if (pages[currentPageIndex]) {
+    const deleted = pages[currentPageIndex].markups.find(m => m.id === id);
     pages[currentPageIndex].markups = pages[currentPageIndex].markups.filter(m => m.id !== id);
+
+    // If it was a count markup, re-emit the new total for its category
+    if (deleted?.type === 'count') {
+      reemitCountTotal((deleted as CountMarkup).categoryId);
+    }
   }
   canvasState.setSelection(null);
   appState.dirty = true;
 
-  // If it was a count markup, re-emit the new total for its category
-  const allMarkups = canvasPages().flatMap(p => p.markups);
-  const deletedMarkup = allMarkups.find(m => m.id === id);
-  if (deletedMarkup?.type === 'count') {
-    reemitCountTotal((deletedMarkup as CountMarkup).categoryId);
+  // Remove from assignment store and recalculate affected slot total
+  if (assignment) {
+    appState.project.measureAssignments = appState.project.measureAssignments.filter(a => a.markupId !== id);
+    recomputeSlotTotal(assignment.taskId, assignment.role);
   }
 }
 
@@ -359,8 +382,12 @@ function clearCanvas(): void {
 
 function restoreMarkups(): void {
   if (!stageManager) return;
+  applyTaskColorsToPageMarkups(); // update stored colors before rendering
   stageManager.clearMarkups();
   for (const m of getPageMarkups()) stageManager.addMarkupNode(m);
+  // Re-populate the value cache so multi-markup sums are correct
+  for (const m of getPageMarkups()) emitMeasurementValue(m);
+  updateMarkupVisibility();
 }
 
 // ── Count tool ─────────────────────────────────────────────────────────────────
@@ -483,6 +510,54 @@ function renderCountPanel(): void {
 
 // ── Measurement value extraction ───────────────────────────────────────────────
 
+// ── Task colors & phase visibility ─────────────────────────────────────────────
+
+/**
+ * Update each markup's stored strokeColor to match its assigned task color.
+ * This must run before re-rendering so the right color is baked into the node.
+ */
+function applyTaskColorsToPageMarkups(): void {
+  const markups = getPageMarkups();
+  for (const markup of markups) {
+    const assignment = getAssignmentForMarkup(markup.id);
+    const color = assignment ? getTaskColor(assignment.taskId) : DEFAULT_MARKUP_COLOR;
+    if (markup.style.strokeColor !== color) {
+      markup.style = { ...markup.style, strokeColor: color };
+    }
+  }
+}
+
+/**
+ * Show/dim canvas markups based on the active phase.
+ * - Markups assigned to the active phase: full opacity
+ * - Markups assigned to another phase:    dimmed to 15%
+ * - Unassigned markups:                   shown at 60% (visible but neutral)
+ */
+function updateMarkupVisibility(): void {
+  if (!stageManager) return;
+  const activePhaseId = appState.activePhaseId;
+  const markups = getPageMarkups();
+
+  for (const markup of markups) {
+    const node = stageManager.findNode(markup.id);
+    if (!node) continue;
+
+    const assignment = getAssignmentForMarkup(markup.id);
+    if (!assignment) {
+      node.opacity(activePhaseId ? 0.4 : 1);
+      continue;
+    }
+
+    const task = appState.project.tasks.find(t => t.id === assignment.taskId);
+    if (!activePhaseId || task?.phaseId === activePhaseId) {
+      node.opacity(1);
+    } else {
+      node.opacity(0.12);
+    }
+  }
+  stageManager.draw();
+}
+
 /**
  * Compute the numeric value of a measurement markup in real-world units.
  * Linear → feet. Area (rect/poly) → square feet. Returns 0 when uncalibrated.
@@ -562,6 +637,13 @@ function showAssignPrompt(markup: Markup): void {
     .map(t => `<option value="${t.id}">${t.name}</option>`)
     .join('');
 
+  // Build a color-coded task legend for the modal
+  const taskLegend = tasks
+    .map(t => `<span class="task-legend-item">
+      <span class="task-color-dot" style="background:${getTaskColor(t.id)}"></span>${esc(t.name)}
+    </span>`)
+    .join('');
+
   const body = `
     <p>Assigning a <strong>${isArea ? 'area' : 'linear'}</strong> measurement
        — value: <strong style="color:var(--color-accent2)">${valueLabel}</strong></p>
@@ -573,9 +655,8 @@ function showAssignPrompt(markup: Markup): void {
       <label>Scope input:</label>
       <select id="assign-role">${roleOptionsHtml(tasks[0].id)}</select>
     </div>
-    <p class="modal-hint">Only the scope inputs defined for the selected task are shown.
-       Area measurements → tasks with an <em>Area</em> input.
-       Linear measurements → tasks with Length / Width / Height inputs.</p>`;
+    <div class="task-legend">${taskLegend}</div>
+    <p class="modal-hint">Only scope inputs for the selected task are shown. The markup will be colored to match the task.</p>`;
 
   // Wire task → role dependency after the modal DOM renders
   setTimeout(() => {
@@ -602,6 +683,13 @@ function showAssignPrompt(markup: Markup): void {
       label: `${isArea ? 'Area' : 'Linear'} → ${role}`,
     });
     appState.dirty = true;
+
+    // Color the markup to match its task, then re-render
+    const taskColor = getTaskColor(taskId);
+    markup.style = { ...markup.style, strokeColor: taskColor };
+    stageManager?.updateMarkupNode(markup);
+    updateMarkupVisibility();
+
     emitMeasurementValue(markup);
     appState.emit('scope-changed');
   }).catch(() => { /* user cancelled */ });
@@ -800,6 +888,10 @@ function showModal(title: string, body: string, okText = 'OK'): Promise<string |
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 function pickPdfFileBrowser(): Promise<Uint8Array | null> {
   return new Promise(resolve => {

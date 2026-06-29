@@ -375,6 +375,7 @@ html, body {
 .task-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
+  border-left: 3px solid var(--task-color, var(--color-border));
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -382,10 +383,27 @@ html, body {
 .task-header {
   display: flex;
   align-items: center;
+  gap: 8px;
   justify-content: space-between;
   padding: 10px 14px;
   background: var(--color-surface2);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* Colored square that identifies the task's canvas color */
+.task-color-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+}
+
+/* Badge showing how many measurements are assigned */
+.task-assign-badge {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 .task-name {
@@ -699,6 +717,33 @@ html, body {
 .modal-body select:focus {
   outline: 2px solid var(--color-accent);
   border-color: var(--color-accent);
+}
+
+/* Task color legend inside the assign modal */
+.task-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  background: var(--color-surface2);
+  border-radius: var(--radius-sm);
+}
+
+.task-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.task-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
 }
 
 .bid-body { padding: 0 0 8px; }

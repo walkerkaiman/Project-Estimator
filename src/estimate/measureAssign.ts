@@ -1,27 +1,29 @@
 /**
  * Measurement Assignment
  *
- * Links a canvas measurement markup to a specific task scope input.
- * When a measurement is updated (length, area, count), the value flows
- * automatically into the matching scope entry for the assigned task.
+ * Links canvas measurement markups to task scope inputs.
+ * Multiple markups can be assigned to the same (taskId, role) slot —
+ * the scope value is always the SUM of all assigned markups' values.
  *
- * This module defines the data contract and assignment store.
- * The canvas integration (porting measurement tools from RedlinePDF) is
- * done in a later milestone; this module is consumed by that integration.
- *
- * ── Data shape ─────────────────────────────────────────────────────────────
- *
- * Each "assignment" ties:
- *   markupId → taskId + role (e.g. 'length', 'area', 'count')
- *
- * When the measurement markup is moved or redrawn, the engine recomputes the
- * numeric value and calls `applyMeasurement(markupId, value)`.
+ * Data shape:  markupId → { taskId, role }
+ * Value cache: markupId → last known computed value (in-memory, rebuilt on load)
  */
 
 import { appState } from '../appState.ts';
 import type { MeasurementAssignment } from './project.ts';
 
 export type { MeasurementAssignment };
+
+// ── In-memory value cache ─────────────────────────────────────────────────────
+// Stores the most recent computed value for each markup so we can sum multiple
+// markups assigned to the same (taskId, role) pair.
+
+const markupValueCache = new Map<string, number>();
+
+/** Clear the cache (call on project-new / project-loaded before re-population). */
+export function clearMarkupValueCache(): void {
+  markupValueCache.clear();
+}
 
 // ── Accessors ─────────────────────────────────────────────────────────────────
 
@@ -50,30 +52,61 @@ export function assignMarkup(assignment: MeasurementAssignment): void {
 }
 
 export function unassignMarkup(markupId: string): void {
+  markupValueCache.delete(markupId);
   setAssignments(getAssignments().filter(a => a.markupId !== markupId));
 }
 
 // ── Value propagation ─────────────────────────────────────────────────────────
 
 /**
- * Called by the canvas layer whenever a measurement markup's value changes.
- * Updates the corresponding scope entry so formulas recompute automatically.
+ * Called whenever a measurement markup's value changes.
  *
- * @param markupId  The canvas markup that changed.
- * @param value     The new computed measurement value (feet, sq ft, count, etc.).
+ * Stores the value in the cache, then recomputes the SUM of all markups
+ * assigned to the same (taskId, role) slot and writes it into the project scope.
+ * This means multiple measurements compound automatically.
+ *
+ * @param markupId  The markup whose value changed.
+ * @param value     New computed value (feet, sq ft, count, …).
  */
 export function applyMeasurement(markupId: string, value: number): void {
+  // Store this markup's value
+  markupValueCache.set(markupId, value);
+
   const assignment = getAssignmentForMarkup(markupId);
   if (!assignment) return;
 
+  // Sum every markup assigned to the same (taskId, role) slot
+  const peers = getAssignments().filter(
+    a => a.taskId === assignment.taskId && a.role === assignment.role,
+  );
+  const total = peers.reduce((sum, a) => sum + (markupValueCache.get(a.markupId) ?? 0), 0);
+
   const scope = appState.project.scope;
-  const idx = scope.findIndex(s => s.taskId === assignment.taskId && s.role === assignment.role);
+  const idx = scope.findIndex(
+    s => s.taskId === assignment.taskId && s.role === assignment.role,
+  );
   if (idx >= 0) {
-    scope[idx].value = value;
+    scope[idx].value = total;
   } else {
-    scope.push({ taskId: assignment.taskId, role: assignment.role, value, markupId });
+    scope.push({ taskId: assignment.taskId, role: assignment.role, value: total, markupId });
   }
 
+  appState.dirty = true;
+  appState.emit('scope-changed');
+}
+
+/**
+ * Recompute the scope total for a (taskId, role) slot without a new value.
+ * Useful after deleting a markup to recalculate remaining totals.
+ */
+export function recomputeSlotTotal(taskId: string, role: string): void {
+  const peers = getAssignments().filter(a => a.taskId === taskId && a.role === role);
+  if (peers.length === 0) return;
+
+  const total = peers.reduce((sum, a) => sum + (markupValueCache.get(a.markupId) ?? 0), 0);
+  const scope = appState.project.scope;
+  const idx = scope.findIndex(s => s.taskId === taskId && s.role === role);
+  if (idx >= 0) scope[idx].value = total;
   appState.dirty = true;
   appState.emit('scope-changed');
 }

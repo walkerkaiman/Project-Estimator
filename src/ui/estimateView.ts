@@ -21,6 +21,8 @@ import type { ScopeEntry, SnapshotTask } from '../estimate/project.ts';
 import { getMaterialCost } from '../estimate/snapshot.ts';
 import { saveCatalog } from '../storage/catalogStore.ts';
 import { showPrompt, showConfirm } from './modal.ts';
+import { getTaskColor } from '../estimate/taskColors.ts';
+import { getAssignmentsForTask } from '../estimate/measureAssign.ts';
 
 export function initEstimateUI(): void {
   appState.on('project-new', renderAll);
@@ -39,7 +41,7 @@ export function initEstimateUI(): void {
         const id = `phase-${Date.now()}`;
         appState.project.phases.push({ id, name, order: getPhases().length });
         appState.dirty = true;
-        activePhaseId = id;
+        setActivePhaseId(id);
         appState.emit('project-changed');
       })
       .catch(console.error);
@@ -48,9 +50,13 @@ export function initEstimateUI(): void {
   renderAll();
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
-
-let activePhaseId: string | null = null;
+// activePhaseId lives in appState so the canvas panel can react to it.
+// This local alias is kept for readability inside this module.
+function getActivePhaseId(): string | null { return appState.activePhaseId; }
+function setActivePhaseId(id: string | null): void {
+  appState.activePhaseId = id;
+  appState.emit('phase-changed');
+}
 
 // ── Top-level render ──────────────────────────────────────────────────────────
 
@@ -75,17 +81,17 @@ function renderSidebar(): void {
 
   const phases = getPhases();
 
-  if (!activePhaseId && phases.length > 0) activePhaseId = phases[0].id;
+  if (!getActivePhaseId() && phases.length > 0) setActivePhaseId(phases[0].id);
 
   nav.innerHTML = phases.map(ph => `
-    <a href="#" class="phase-link ${ph.id === activePhaseId ? 'active' : ''}" data-phase="${esc(ph.id)}">
+    <a href="#" class="phase-link ${ph.id === getActivePhaseId() ? 'active' : ''}" data-phase="${esc(ph.id)}">
       ${esc(ph.name)}
     </a>`).join('');
 
   nav.querySelectorAll<HTMLElement>('.phase-link').forEach(a => {
     a.addEventListener('click', e => {
       e.preventDefault();
-      activePhaseId = a.dataset.phase!;
+      setActivePhaseId(a.dataset.phase!);
       renderAll();
     });
   });
@@ -103,7 +109,7 @@ function renderWorkspace(): void {
     return;
   }
 
-  const phase = phases.find(p => p.id === activePhaseId) ?? phases[0];
+  const phase = phases.find(p => p.id === getActivePhaseId()) ?? phases[0];
   if (!phase) { root.innerHTML = emptyState(); return; }
 
   const tasks = getTasks(phase.id);
@@ -147,11 +153,19 @@ function renderTask(task: SnapshotTask): string {
       <td class="cost-cell">${fmtCurrency(ml.cost)}</td>
     </tr>`).join('');
 
+  const taskColor = getTaskColor(task.id);
+  const assignments = getAssignmentsForTask(task.id);
+  const assignBadge = assignments.length > 0
+    ? `<span class="task-assign-badge" title="${assignments.length} measurement(s) assigned">${assignments.length} 📐</span>`
+    : '';
+
   return `
-    <div class="task-card" data-task="${esc(task.id)}">
+    <div class="task-card" data-task="${esc(task.id)}" style="--task-color:${taskColor}">
       <div class="task-header">
+        <span class="task-color-swatch" style="background:${taskColor}" title="Task color on canvas"></span>
         <span class="task-name-editable" data-task="${esc(task.id)}">${esc(task.name)}</span>
         <div class="task-header-right">
+          ${assignBadge}
           <span class="task-total" data-task-total="${esc(task.id)}">${fmtCurrency(totals.totalCost)}</span>
           <button class="icon-btn danger" data-delete-task="${esc(task.id)}" title="Delete task">✕</button>
         </div>
@@ -243,7 +257,7 @@ function attachWorkspaceListeners(root: HTMLElement, phase: Phase): void {
         appState.project.phases = appState.project.phases.filter(p => p.id !== phaseId);
         appState.project.tasks  = appState.project.tasks.filter(t => t.phaseId !== phaseId);
         appState.dirty = true;
-        activePhaseId = appState.project.phases[0]?.id ?? null;
+        setActivePhaseId(appState.project.phases[0]?.id ?? null);
         appState.emit('project-changed');
       });
     });
