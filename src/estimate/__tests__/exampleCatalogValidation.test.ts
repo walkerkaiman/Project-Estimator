@@ -76,9 +76,11 @@ describe('Example catalog — task: Build Forms – One Sided', () => {
 describe('Example catalog — all tasks have valid formulas', () => {
   for (const task of EXAMPLE_CATALOG.tasks) {
     it(`task "${task.name}" labor formula is evaluable`, () => {
-      const vars = buildVars([{ role: 'length', value: 10 }, { role: 'height', value: 1 }]);
+      // Build vars from the task's own scopeInputs, each seeded with value=10
+      // so every declared variable resolves to a number (not undefined)
+      const scope = task.scopeInputs.map(si => ({ role: si.role, value: 10 }));
+      const vars = buildVars(scope);
       const result = evalFormula(task.laborQtyFormula, vars);
-      // Should not be NaN (0 or more is acceptable for zero-scope inputs)
       expect(isNaN(result)).toBe(false);
     });
   }

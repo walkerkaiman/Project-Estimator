@@ -76,10 +76,10 @@ export const EXAMPLE_CATALOG: Catalog = {
       phaseId: 'phase-foundation',
       name: 'Build Forms – One Sided',
       laborUnit: 'LF',
-      laborRate: 0,                // ← real rate loaded from importer / in-app edit
+      laborRate: 0,
       laborQtyFormula: 'Length',
       scopeInputs: [
-        { role: 'length', label: 'Length (ft)',       unit: 'ft', required: true  },
+        { role: 'length', label: 'Length (ft)',         unit: 'ft', required: true  },
         { role: 'height', label: 'Height / Depth (ft)', unit: 'ft', required: true },
       ],
       recipe: [
@@ -107,7 +107,29 @@ export const EXAMPLE_CATALOG: Catalog = {
         { role: 'width',  label: 'Width (ft)',  unit: 'ft', required: true },
         { role: 'height', label: 'Height (ft)', unit: 'ft', required: true },
       ],
-      recipe: [],   // concrete yards calculated via formula in the engine
+      recipe: [],
+    },
+    {
+      // Example area-based task: demonstrates Area scope input + polygon measurement flow
+      id: 'task-slab-pour',
+      phaseId: 'phase-slab',
+      name: 'Pour Slab',
+      laborUnit: 'sq ft',
+      laborRate: 0,
+      // Area (sq ft) drives labor; concrete volume = Area × thickness ÷ 27 (cy)
+      laborQtyFormula: 'Area',
+      scopeInputs: [
+        { role: 'area',   label: 'Slab Area (sq ft)', unit: 'sq ft', required: true },
+        { role: 'height', label: 'Thickness (ft)',     unit: 'ft',    required: true },
+      ],
+      recipe: [
+        {
+          materialId: 'mat-rebar-5',
+          factor: 1.2,
+          // Rebar: roughly 1.2 LF per sq ft of slab
+          orderQtyFormula: 'ROUNDUP(1.2 * Area, 0)',
+        },
+      ],
     },
   ],
 };

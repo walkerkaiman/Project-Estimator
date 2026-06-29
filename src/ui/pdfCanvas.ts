@@ -483,25 +483,25 @@ function renderCountPanel(): void {
 
 // ── Measurement value extraction ───────────────────────────────────────────────
 
-function emitMeasurementValue(markup: Markup): void {
-  if (markup.type === 'count') {
-    // Count is handled by reemitCountTotal; skip here
-    return;
-  }
-  if (!pageScale.calibrated) return;
-
-  let value = 0;
-  const ppi = pageScale.pointsPerUnit;
+/**
+ * Compute the numeric value of a measurement markup in real-world units.
+ * Linear → feet. Area (rect/poly) → square feet. Returns 0 when uncalibrated.
+ */
+function computeMarkupValue(markup: Markup): number {
+  if (!pageScale.calibrated) return 0;
+  const ppi = pageScale.pointsPerUnit; // PDF points per real-world inch
 
   if (markup.type === 'measure-linear') {
     const m = markup as import('../model/document.ts').MeasureLinearMarkup;
     const dx = m.x2 - m.x1;
     const dy = m.y2 - m.y1;
-    value = Math.sqrt(dx * dx + dy * dy) / ppi / 12; // feet
-  } else if (markup.type === 'measure-rect') {
+    return Math.sqrt(dx * dx + dy * dy) / ppi / 12; // → feet
+  }
+  if (markup.type === 'measure-rect') {
     const m = markup as import('../model/document.ts').MeasureRectMarkup;
-    value = (m.width * m.height) / (ppi * ppi) / 144; // sq ft
-  } else if (markup.type === 'measure-poly') {
+    return (m.width * m.height) / (ppi * ppi) / 144; // → sq ft
+  }
+  if (markup.type === 'measure-poly') {
     const m = markup as import('../model/document.ts').MeasurePolyMarkup;
     let area = 0;
     for (let i = 0; i < m.points.length; i++) {
@@ -509,9 +509,15 @@ function emitMeasurementValue(markup: Markup): void {
       const q = m.points[(i + 1) % m.points.length];
       area += p.x * q.y - q.x * p.y;
     }
-    value = Math.abs(area) / 2 / (ppi * ppi) / 144; // sq ft
+    return Math.abs(area) / 2 / (ppi * ppi) / 144; // → sq ft
   }
+  return 0;
+}
 
+function emitMeasurementValue(markup: Markup): void {
+  if (markup.type === 'count') return; // handled by reemitCountTotal
+  const value = computeMarkupValue(markup);
+  if (value === 0 && !pageScale.calibrated) return;
   applyMeasurement(markup.id, value);
 }
 
@@ -522,45 +528,78 @@ function showAssignPrompt(markup: Markup): void {
   const tasks = appState.project.tasks;
   if (tasks.length === 0) return;
 
-  const roleMap: Record<string, string> = {
-    'measure-linear': 'length',
-    'measure-rect':   'area',
-    'measure-poly':   'area',
-  };
-  const defaultRole = roleMap[markup.type] ?? 'length';
+  const isArea = markup.type === 'measure-rect' || markup.type === 'measure-poly';
+  const preferredRole = isArea ? 'area' : 'length';
+  const measuredValue = computeMarkupValue(markup);
+  const valueLabel = isArea
+    ? `${measuredValue.toFixed(2)} sq ft`
+    : `${measuredValue.toFixed(2)} ft`;
 
-  const taskOptions = tasks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-  const roleOptions = ['length', 'width', 'height', 'area']
-    .map(r => `<option value="${r}" ${r === defaultRole ? 'selected' : ''}>${r}</option>`).join('');
+  /**
+   * Build <option> elements from the selected task's actual scopeInputs.
+   * Falls back to a sensible default set if the task has no inputs defined.
+   */
+  function roleOptionsHtml(taskId: string): string {
+    const task = tasks.find(t => t.id === taskId);
+    const inputs = task?.scopeInputs ?? [];
+    if (inputs.length === 0) {
+      // Task has no declared inputs — offer the full role menu
+      return (['length', 'width', 'height', 'area', 'volume', 'count'] as const)
+        .map(r => `<option value="${r}"${r === preferredRole ? ' selected' : ''}>${r}</option>`)
+        .join('');
+    }
+    // Only show roles the task actually declares — select the preferred one if present
+    const hasPreferred = inputs.some(si => si.role === preferredRole);
+    return inputs
+      .map(si => {
+        const sel = (hasPreferred ? si.role === preferredRole : inputs.indexOf(si) === 0) ? ' selected' : '';
+        return `<option value="${si.role}"${sel}>${si.label || si.role}</option>`;
+      })
+      .join('');
+  }
+
+  const taskOptions = tasks
+    .map(t => `<option value="${t.id}">${t.name}</option>`)
+    .join('');
 
   const body = `
-    <p>Assign this measurement to a task scope input?</p>
+    <p>Assigning a <strong>${isArea ? 'area' : 'linear'}</strong> measurement
+       — value: <strong style="color:var(--color-accent2)">${valueLabel}</strong></p>
     <div class="form-row">
       <label>Task:</label>
       <select id="assign-task" style="flex:1">${taskOptions}</select>
     </div>
     <div class="form-row">
-      <label>Role:</label>
-      <select id="assign-role">${roleOptions}</select>
+      <label>Scope input:</label>
+      <select id="assign-role">${roleOptionsHtml(tasks[0].id)}</select>
     </div>
-    <div class="form-row">
-      <label>Label:</label>
-      <input id="assign-label" type="text" value="${markup.type.replace('measure-', '')} ${markup.id.slice(-4)}" style="flex:1"/>
-    </div>`;
+    <p class="modal-hint">Only the scope inputs defined for the selected task are shown.
+       Area measurements → tasks with an <em>Area</em> input.
+       Linear measurements → tasks with Length / Width / Height inputs.</p>`;
+
+  // Wire task → role dependency after the modal DOM renders
+  setTimeout(() => {
+    const taskSel = document.getElementById('assign-task') as HTMLSelectElement | null;
+    const roleSel = document.getElementById('assign-role') as HTMLSelectElement | null;
+    if (!taskSel || !roleSel) return;
+    taskSel.addEventListener('change', () => {
+      roleSel.innerHTML = roleOptionsHtml(taskSel.value);
+    });
+  }, 30);
 
   showModal('Assign Measurement', body, 'Assign').then(result => {
     if (!result) return;
     const taskId = (document.getElementById('assign-task') as HTMLSelectElement)?.value ?? '';
-    const role = (document.getElementById('assign-role') as HTMLSelectElement)?.value ?? defaultRole;
-    const label = (document.getElementById('assign-label') as HTMLInputElement)?.value ?? '';
+    const role   = (document.getElementById('assign-role')  as HTMLSelectElement)?.value ?? preferredRole;
     if (!taskId) return;
 
-    appState.project.measureAssignments = appState.project.measureAssignments.filter(a => a.markupId !== markup.id);
+    appState.project.measureAssignments = appState.project.measureAssignments
+      .filter(a => a.markupId !== markup.id);
     appState.project.measureAssignments.push({
       markupId: markup.id,
       taskId,
       role: role as import('../estimate/project.ts').MeasurementAssignment['role'],
-      label: label || `${markup.type} ${markup.id.slice(-4)}`,
+      label: `${isArea ? 'Area' : 'Linear'} → ${role}`,
     });
     appState.dirty = true;
     emitMeasurementValue(markup);
