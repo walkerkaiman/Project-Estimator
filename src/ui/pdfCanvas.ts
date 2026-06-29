@@ -14,6 +14,7 @@ import { canvasState } from '../canvas-state/canvasState.ts';
 import { createKonvaStageManager, type KonvaStageManager } from '../canvas/stage.ts';
 import { loadPdf, fitPageScale, type PdfRenderer } from '../pdf/renderer.ts';
 import { SelectTool } from '../tools/selectTool.ts';
+import { PanTool } from '../tools/panTool.ts';
 import { ScaleSetTool } from '../tools/scaleSetTool.ts';
 import { MeasureLinearTool } from '../tools/measureLinearTool.ts';
 import { MeasureRectTool } from '../tools/measureRectTool.ts';
@@ -86,6 +87,7 @@ export function initPdfCanvas(): void {
   // File + tool buttons
   document.getElementById('btn-load-pdf')?.addEventListener('click', () => void handleLoadPdf());
   document.getElementById('btn-tool-select')?.addEventListener('click', () => setTool('select'));
+  document.getElementById('btn-tool-pan')?.addEventListener('click', () => setTool('pan'));
   document.getElementById('btn-tool-scale')?.addEventListener('click', () => setTool('scale-set'));
   document.getElementById('btn-tool-linear')?.addEventListener('click', () => setTool('measure-linear'));
   document.getElementById('btn-tool-rect')?.addEventListener('click', () => setTool('measure-rect'));
@@ -104,6 +106,7 @@ export function initPdfCanvas(): void {
   // Build tools
   const ctx = buildToolContext();
   tools.set('select', new SelectTool(ctx));
+  tools.set('pan', new PanTool(ctx));
   tools.set('scale-set', new ScaleSetTool(ctx));
   tools.set('measure-linear', new MeasureLinearTool(ctx));
   tools.set('measure-rect', new MeasureRectTool(ctx));
@@ -159,6 +162,11 @@ export function initPdfCanvas(): void {
     }
     if ((e.ctrlKey || e.metaKey) && e.key === '=') { e.preventDefault(); zoom(1.25); }
     if ((e.ctrlKey || e.metaKey) && e.key === '-') { e.preventDefault(); zoom(0.8); }
+    // Tool shortcuts (only when not typing in an input)
+    if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      if (e.key === 'v' || e.key === 'V') setTool('select');
+      if (e.key === 'h' || e.key === 'H') setTool('pan');
+    }
     // Arrow keys for page navigation when no input is focused
     if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
       if (e.key === 'ArrowLeft' || e.key === 'PageUp') void navigatePage(-1);
