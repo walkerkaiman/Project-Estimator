@@ -67,6 +67,7 @@ export function hexWithOpacity(hex: string, opacity: number): string {
 }
 
 function createMarkupNode(markup: Markup, pageHeightPts: number): Konva.Node {
+  // Store type as a Konva attribute so tools can inspect it without the data store
   const style = markup.style;
   const mColor = style.strokeColor ?? '#0077cc';
   const mWidth = style.strokeWidth ?? 1.5;
@@ -177,6 +178,8 @@ function createMarkupNode(markup: Markup, pageHeightPts: number): Konva.Node {
       break;
   }
 
+  // Tag the node so tools can inspect type without querying the data store
+  node.setAttr('markupType', markup.type);
   return node;
 }
 

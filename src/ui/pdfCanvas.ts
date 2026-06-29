@@ -98,6 +98,12 @@ export function initPdfCanvas(): void {
   document.getElementById('btn-tool-poly')?.addEventListener('click', () => setTool('measure-poly'));
   document.getElementById('btn-tool-count')?.addEventListener('click', () => setTool('count'));
 
+  // Delete selected markup
+  document.getElementById('btn-delete-markup')?.addEventListener('click', () => {
+    const selId = canvasState.state.selectedMarkupId;
+    if (selId) deleteMarkup(selId);
+  });
+
   // Zoom & fit
   document.getElementById('btn-canvas-zoom-in')?.addEventListener('click', () => zoom(1.25));
   document.getElementById('btn-canvas-zoom-out')?.addEventListener('click', () => zoom(0.8));
@@ -145,6 +151,12 @@ export function initPdfCanvas(): void {
   });
 
   // Markup transform (move/resize after bake)
+  // Keep the Delete button's enabled state in sync with the selection
+  canvasState.on('selection-change', () => {
+    const btn = document.getElementById('btn-delete-markup') as HTMLButtonElement | null;
+    if (btn) btn.disabled = !canvasState.state.selectedMarkupId;
+  });
+
   canvasState.on('markup-transform', (data) => {
     const { id } = data as { id: string };
     const markups = getPageMarkups();
@@ -346,6 +358,9 @@ function addMarkup(markup: Markup): void {
   stageManager.addMarkupNode(markup);
   saveMarkup(markup);
   emitMeasurementValue(markup);
+  // If select tool is active, make the new node draggable immediately
+  const sel = tools.get('select') as import('../tools/selectTool.ts').SelectTool | undefined;
+  sel?.refreshDraggable();
   showAssignPrompt(markup);
 }
 
