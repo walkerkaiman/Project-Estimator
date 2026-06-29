@@ -133,5 +133,6 @@ function migrateProject(raw: Partial<EstimateProject>): EstimateProject {
     snapshot: raw.snapshot ?? { takenAt: new Date().toISOString(), materials: [] },
     snapshotStale: raw.snapshotStale ?? false,
     scope: raw.scope ?? [],
+    measureAssignments: raw.measureAssignments ?? [],
   };
 }

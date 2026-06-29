@@ -6,9 +6,11 @@ import './style.css';
 import { appState } from './appState.ts';
 import { loadCatalog } from './storage/catalogStore.ts';
 import { openProject, saveProjectAs, saveProjectToPath } from './storage/projectStore.ts';
-import { newProject } from './estimate/project.ts';
 import { initEstimateUI } from './ui/estimateView.ts';
+import { openCatalogManager } from './ui/catalogManager.ts';
+import { openBidExport } from './ui/bidExport.ts';
 import { isTauri } from './tauri/integration.ts';
+import { refreshSnapshotPrices } from './estimate/snapshot.ts';
 
 async function init(): Promise<void> {
   // Load the catalog (app-data or localStorage or example)
@@ -17,6 +19,9 @@ async function init(): Promise<void> {
 
   // Wire toolbar
   document.getElementById('btn-new-project')?.addEventListener('click', handleNewProject);
+  document.getElementById('btn-refresh-prices')?.addEventListener('click', handleRefreshPrices);
+  document.getElementById('btn-catalog')?.addEventListener('click', openCatalogManager);
+  document.getElementById('btn-export-bid')?.addEventListener('click', openBidExport);
   document.getElementById('btn-open-project')?.addEventListener('click', () => void handleOpenProject());
   document.getElementById('btn-save-project')?.addEventListener('click', () => void handleSaveProject());
   document.getElementById('btn-save-project-as')?.addEventListener('click', () => void handleSaveProjectAs());
@@ -35,10 +40,14 @@ async function init(): Promise<void> {
 
 function handleNewProject(): void {
   if (appState.dirty && !confirm('Discard unsaved changes and start a new project?')) return;
-  appState.project = newProject();
-  appState.currentProjectPath = null;
-  appState.dirty = false;
-  appState.emit('project-new');
+  appState.newProjectFromCatalog();
+}
+
+function handleRefreshPrices(): void {
+  if (!confirm('Refresh material prices and labor rates from the master catalog?\n\nThis will update your price snapshot but keep all scope inputs.')) return;
+  appState.project = refreshSnapshotPrices(appState.project, appState.catalog);
+  appState.dirty = true;
+  appState.emit('project-changed');
 }
 
 async function handleOpenProject(): Promise<void> {

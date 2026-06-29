@@ -9,6 +9,7 @@ import type { Catalog } from './estimate/catalog.ts';
 import type { EstimateProject } from './estimate/project.ts';
 import { emptyCatalog } from './estimate/catalog.ts';
 import { newProject } from './estimate/project.ts';
+import { initProjectFromCatalog } from './estimate/snapshot.ts';
 
 // ── Event map ────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,18 @@ class AppState {
 
   emit(event: AppEvent): void {
     for (const fn of this.listeners.get(event) ?? []) fn();
+  }
+
+  /**
+   * Create a new blank project pre-populated with the current catalog's
+   * phases, tasks, and a fresh price snapshot.
+   */
+  newProjectFromCatalog(): void {
+    const base = newProject();
+    this.project = initProjectFromCatalog(base, this.catalog, true);
+    this.currentProjectPath = null;
+    this.dirty = false;
+    this.emit('project-new');
   }
 }
 

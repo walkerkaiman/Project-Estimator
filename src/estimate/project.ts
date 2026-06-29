@@ -9,7 +9,7 @@
  *     be added/renamed per-project without affecting the master catalog.
  */
 
-import type { Material, Task, Phase } from './catalog.ts';
+import type { Material, Task, Phase, ScopeRole } from './catalog.ts';
 
 // ── Price snapshot ────────────────────────────────────────────────────────────
 
@@ -31,10 +31,18 @@ export interface PriceSnapshot {
 /** A single filled-in scope input for one task on one project. */
 export interface ScopeEntry {
   taskId: string;
-  role: string;              // ScopeRole from catalog
+  role: ScopeRole | string;  // ScopeRole from catalog (or custom string)
   value: number;
-  /** Optional: link to a markup ID in the RedlinePDF canvas (future). */
+  /** Optional: link to a canvas measurement markup that drives this value. */
   markupId?: string;
+}
+
+/** Assignment of a canvas measurement markup to a scope input. */
+export interface MeasurementAssignment {
+  markupId: string;
+  taskId: string;
+  role: ScopeRole;
+  label: string;
 }
 
 // ── Project ───────────────────────────────────────────────────────────────────
@@ -59,8 +67,11 @@ export interface EstimateProject {
   /** Whether prices should be refreshed from master catalog on next open. */
   snapshotStale: boolean;
 
-  /** Per-task scope values entered by the user. */
+  /** Per-task scope values entered by the user or driven by measurements. */
   scope: ScopeEntry[];
+
+  /** Canvas measurement-to-scope assignments. */
+  measureAssignments: MeasurementAssignment[];
 }
 
 export function newProject(name = 'Untitled Project'): EstimateProject {
@@ -76,5 +87,6 @@ export function newProject(name = 'Untitled Project'): EstimateProject {
     snapshot: { takenAt: now, materials: [] },
     snapshotStale: false,
     scope: [],
+    measureAssignments: [],
   };
 }
